@@ -14,7 +14,6 @@
 # limitations under the License.
 import json
 import os
-import subprocess
 import time
 from collections import OrderedDict
 
