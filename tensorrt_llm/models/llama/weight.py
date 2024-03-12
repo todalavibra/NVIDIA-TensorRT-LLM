@@ -1310,7 +1310,7 @@ def load_from_awq_llama(quant_ckpt_path,
         def load(key):
             v = torch.from_numpy(awq_llama[awq_prefix + key])
             if "weights_scaling_factor" in key:
-                v *= 7  # For AMMO *.npz checkpoints
+                v *= 8  # For AMMO *.npz checkpoints
             return v
 
         group_size = load("layers:0:attention:dense:weight").numel() // load(
