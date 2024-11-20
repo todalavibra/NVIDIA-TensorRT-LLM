@@ -1,3 +1,4 @@
+from ..executor import NoStatsAvailable, RequestError
 from .build_cache import BuildCacheConfig
 from .llm import LLM, RequestOutput, SamplingParams
 from .llm_utils import (BuildConfig, CalibConfig, CapacitySchedulerPolicy,
@@ -15,4 +16,6 @@ __all__ = [
     'QuantAlgo',
     'CalibConfig',
     'BuildCacheConfig',
+    'RequestError',
+    'NoStatsAvailable',
 ]

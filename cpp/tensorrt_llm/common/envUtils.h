@@ -18,6 +18,7 @@
 #pragma once
 #include <cstdint>
 #include <optional>
+#include <string>
 
 namespace tensorrt_llm::common
 {
@@ -39,5 +40,11 @@ int getEnvMmhaKernelBlockSize();
 
 // Whether PDL is enabled.
 bool getEnvEnablePDL();
+
+bool getEnvUseUCXKvCache();
+
+std::string getEnvUCXInterface();
+
+bool getEnvDisaggLayerwise();
 
 } // namespace tensorrt_llm::common

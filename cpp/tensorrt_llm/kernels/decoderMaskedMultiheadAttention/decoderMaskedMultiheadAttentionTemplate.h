@@ -1500,7 +1500,7 @@ __global__ void __launch_bounds__(MAX_THEADS_PER_BLOCK, MIN_BLOCKS_PER_SM) maske
     int const beam0_context_length
         = HAS_BEAMS && tlength > cyclic_kv_cache_len ? 0 : params.input_lengths[batch_beam_idx];
     // The position of the current timestep, and it is used to apply the position embedding
-    int const current_pos_idx = (!POS_SHIFT || DO_CROSS_ATTENTION) ? tlength : kv_loop_length;
+    int current_pos_idx = (!POS_SHIFT || DO_CROSS_ATTENTION) ? tlength : kv_loop_length;
 
     // The offset in the Q and K buffer also accounts for the batch.
     auto const qk_vec_idx = tidx * QK_VEC_SIZE;
@@ -1565,10 +1565,17 @@ __global__ void __launch_bounds__(MAX_THEADS_PER_BLOCK, MIN_BLOCKS_PER_SM) maske
         if constexpr (DO_CROSS_ATTENTION)
         {
             auto const k_idx = QK_VEC_SIZE * tidx;
-            int const inBlockIdx = kvCacheBuffer.getKVLocalIdx(cyclic_tlength, hi_kv, Dh, k_idx);
-            Tcache* k_cache = reinterpret_cast<Tcache*>(kvCacheBuffer.getKBlockPtr(batch_beam_idx, cyclic_tlength));
+            int const inBlockIdx = pastKCache.getKVLocalIdx(cyclic_tlength, hi_kv, Dh, k_idx);
+            Tcache* k_cache = reinterpret_cast<Tcache*>(pastKCache.getKBlockPtr(batch_beam_idx, cyclic_tlength));
 
-            k = vec_conversion<Qk_vec_k, Qk_vec_m>(*reinterpret_cast<Qk_vec_m const*>(&k_cache[inBlockIdx]));
+            if constexpr (ENABLE_8BITS_K_CACHE)
+            {
+                load_8bits_kv_cache_vec(&k, k_cache, inBlockIdx, k_scale_quant_orig_f);
+            }
+            else
+            {
+                k = vec_conversion<Qk_vec_k, Qk_vec_m>(*reinterpret_cast<Qk_vec_m const*>(&k_cache[inBlockIdx]));
+            }
         }
         else
         {
@@ -1660,6 +1667,7 @@ __global__ void __launch_bounds__(MAX_THEADS_PER_BLOCK, MIN_BLOCKS_PER_SM) maske
         break;
     }
     case PositionEmbeddingType::kLONG_ROPE:
+    case PositionEmbeddingType::kROPE_M:
     case PositionEmbeddingType::kROPE_GPT_NEOX:
     {
         bool const do_rotary = is_valid_qk_vec && QK_VEC_SIZE * tidx < params.rotary_embedding_dim;
@@ -1673,6 +1681,10 @@ __global__ void __launch_bounds__(MAX_THEADS_PER_BLOCK, MIN_BLOCKS_PER_SM) maske
         int const smem_pitch = half_rotary_dim; // TODO: adjust for bank conflicts
 
         assert(half_rotary_dim % QK_VEC_SIZE == 0);
+        if (params.position_embedding_type == PositionEmbeddingType::kROPE_M)
+        {
+            current_pos_idx += params.mrope_position_deltas[batch_idx];
+        }
 
         if (do_rotary)
         {
@@ -2359,7 +2371,14 @@ __global__ void __launch_bounds__(MAX_THEADS_PER_BLOCK, MIN_BLOCKS_PER_SM) maske
         V_vec_k v;
         if (DO_CROSS_ATTENTION)
         {
-            v = vec_conversion<V_vec_k, V_vec_k>(*reinterpret_cast<V_vec_k const*>(&v_cache_base[inBlockIdx]));
+            if constexpr (ENABLE_8BITS_KV_CACHE)
+            {
+                load_8bits_kv_cache_vec(&v, v_cache_base, inBlockIdx, kv_scale_quant_orig_f);
+            }
+            else
+            {
+                v = vec_conversion<V_vec_k, V_vec_k>(*reinterpret_cast<V_vec_k const*>(&v_cache_base[inBlockIdx]));
+            }
         }
         else
         {
@@ -2401,7 +2420,7 @@ __global__ void __launch_bounds__(MAX_THEADS_PER_BLOCK, MIN_BLOCKS_PER_SM) maske
         // Store the values with bias back to global memory in the cache for V.
         //*reinterpret_cast<V_vec_k*>(&v_cache[params.timestep*Dh]) = v;
         // For MQA/GQA mode, write only with the first Q head of each group per KV head.
-        if (hi == (hi_kv * qhead_per_kv))
+        if (hi == (hi_kv * qhead_per_kv) && !DO_CROSS_ATTENTION)
         {
             if (ENABLE_8BITS_KV_CACHE)
             {

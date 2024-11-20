@@ -31,10 +31,10 @@ from ..builder import Engine, EngineConfig, get_engine_version
 from ..logger import logger
 from ..mapping import Mapping
 from ..quantization import QuantMode
-from .generation import (ChatGLMGenerationSession, GenerationSession,
-                         LogitsProcessor, LoraManager, ModelConfig,
-                         QWenForCausalLMGenerationSession, SamplingConfig,
-                         StoppingCriteria, to_word_list_format)
+from .generation import (DISABLE_TORCH_DEVICE_SET, ChatGLMGenerationSession,
+                         GenerationSession, LogitsProcessor, LoraManager,
+                         ModelConfig, QWenForCausalLMGenerationSession,
+                         SamplingConfig, StoppingCriteria, to_word_list_format)
 
 
 def get_engine_name(model: str, dtype: str, tp_size: int, pp_size: int,
@@ -143,6 +143,8 @@ def _builder_to_model_config(config: dict) -> Tuple[ModelConfig, dict]:
     paged_state = plugin_config['paged_state']
     tokens_per_block = plugin_config['tokens_per_block']
     lora_plugin = plugin_config.get('lora_plugin')
+    skip_cross_attn_blocks = bool(
+        pretrained_config.get('skip_cross_attn_blocks', False))
 
     model_config = ModelConfig(
         max_batch_size=max_batch_size,
@@ -173,6 +175,7 @@ def _builder_to_model_config(config: dict) -> Tuple[ModelConfig, dict]:
         trtllm_modules_to_hf_modules=lora_trtllm_modules_to_hf_modules,
         num_medusa_heads=num_medusa_heads,
         max_medusa_tokens=max_medusa_token_len,
+        skip_cross_attn_blocks=skip_cross_attn_blocks,
         # ReDrafter
         redrafter_num_beams=redrafter_num_beams,
         redrafter_draft_len_per_beam=redrafter_draft_len_per_beam,
@@ -217,7 +220,9 @@ def _engine_config_to_model_config(engine_config: EngineConfig,
         )
 
     # TODO(oargov): this is a hack, make it prettier!
-    if hasattr(pretrained_config, "get_layer_num_kv_heads"):
+    if hasattr(pretrained_config, "num_kv_heads_per_layer"):
+        num_kv_heads_per_layer = pretrained_config.num_kv_heads_per_layer
+    elif hasattr(pretrained_config, "get_layer_num_kv_heads"):
         # each layer has a different number of kv heads
         attention_layers = [
             layer_idx for layer_idx, layer_type in enumerate(
@@ -231,6 +236,11 @@ def _engine_config_to_model_config(engine_config: EngineConfig,
         ]
     else:
         num_kv_heads_per_layer = None
+
+    if hasattr(pretrained_config, "num_kv_heads_per_cross_attn_layer"):
+        num_kv_heads_per_cross_attn_layer = pretrained_config.num_kv_heads_per_cross_attn_layer
+    else:
+        num_kv_heads_per_cross_attn_layer = None
 
     return ModelConfig(
         max_batch_size=build_config.max_batch_size,
@@ -264,6 +274,7 @@ def _engine_config_to_model_config(engine_config: EngineConfig,
             pretrained_config, 'num_medusa_heads') else 0,
         **rnn_configs_kwargs,
         num_kv_heads_per_layer=num_kv_heads_per_layer,
+        num_kv_heads_per_cross_attn_layer=num_kv_heads_per_cross_attn_layer,
         redrafter_num_beams=pretrained_config.redrafter_num_beams if hasattr(
             pretrained_config, 'redrafter_num_beams') else 0,
         redrafter_draft_len_per_beam=pretrained_config.
@@ -274,6 +285,8 @@ def _engine_config_to_model_config(engine_config: EngineConfig,
         cross_attention=getattr(pretrained_config, 'cross_attention', False),
         has_position_embedding=getattr(pretrained_config,
                                        'has_position_embedding', True),
+        skip_cross_attn_blocks=getattr(pretrained_config,
+                                       'skip_cross_attn_blocks', False),
         **kwargs)
 
 
@@ -560,7 +573,8 @@ class ModelRunner(ModelRunnerMixin):
 
         if MpiComm.size() > runtime_mapping.gpus_per_node:
             assert MpiComm.local_size() == runtime_mapping.gpus_per_node
-        torch.cuda.set_device(rank % runtime_mapping.gpus_per_node)
+        if not DISABLE_TORCH_DEVICE_SET:
+            torch.cuda.set_device(rank % runtime_mapping.gpus_per_node)
         session = session_cls(model_config,
                               engine_buffer,
                               runtime_mapping,
@@ -662,7 +676,8 @@ class ModelRunner(ModelRunnerMixin):
                 assert model_config.max_medusa_tokens > 0, \
                     "medusa_choice is specified but model_config.max_medusa_tokens is 0."
 
-            torch.cuda.set_device(rank % runtime_mapping.gpus_per_node)
+            if not DISABLE_TORCH_DEVICE_SET:
+                torch.cuda.set_device(rank % runtime_mapping.gpus_per_node)
             session = session_cls(model_config,
                                   engine_buffer,
                                   runtime_mapping,
@@ -893,8 +908,10 @@ class ModelRunner(ModelRunnerMixin):
 
         batch_input_ids = batch_input_ids.cuda()
         input_lengths = input_lengths.cuda()
-        ptuning_kwargs = self._prepare_ptuning(prompt_table, prompt_tasks,
-                                               batch_size)
+        other_kwargs = self._prepare_ptuning(prompt_table, prompt_tasks,
+                                             batch_size)
+        other_kwargs['skip_cross_attn_blocks'] = kwargs.get(
+            'skip_cross_attn_blocks', None)
         outputs = self.session.decode(
             batch_input_ids,
             input_lengths,
@@ -910,7 +927,7 @@ class ModelRunner(ModelRunnerMixin):
             encoder_output=encoder_input_features,
             encoder_input_lengths=encoder_output_lengths,
             cross_attention_mask=cross_attention_masks,
-            **ptuning_kwargs)
+            **other_kwargs)
         if sampling_config.return_dict:
             if streaming:
                 outputs = (self._prepare_outputs(curr_outputs, input_lengths)

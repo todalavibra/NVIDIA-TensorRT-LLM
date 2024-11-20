@@ -18,6 +18,8 @@
 
 #include "tensorrt_llm/executor/tensor.h"
 #include "tensorrt_llm/executor/types.h"
+#include "tensorrt_llm/runtime/common.h"
+#include "tensorrt_llm/runtime/runtimeDefaults.h"
 
 #include <chrono>
 #include <cstdint>
@@ -28,12 +30,19 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
+#include <variant>
 #include <vector>
 
 namespace tensorrt_llm::mpi
 {
 class MpiComm;
-}
+} // namespace tensorrt_llm::mpi
+
+namespace tensorrt_llm::batch_manager::kv_cache_manager
+{
+class KVCacheManager;
+} // namespace tensorrt_llm::batch_manager::kv_cache_manager
 
 namespace tensorrt_llm::executor
 {
@@ -241,6 +250,24 @@ private:
     std::optional<VecTokenExtraIds> mInputTokenExtraIds;
 };
 
+/// @brief Configuration for mrope
+class MropeConfig
+{
+public:
+    explicit MropeConfig(Tensor mropeRoratySinCos, SizeType32 mropePositionDeltas);
+
+    [[nodiscard]] Tensor getMRopeRotarySinCos() const;
+    [[nodiscard]] SizeType32 getMRopePositionDeltas() const;
+
+private:
+    friend class Serialization;
+    /// @brief The mrope rotary sin and cos cache. Expected shape: [maxPositionEmbeddings*rotaryEmbeddingDim],Data type
+    /// must float32
+    Tensor mMRopeRotarySinCos;
+    /// @brief The mrope position deltas
+    SizeType32 mMRopePositionDeltas;
+};
+
 /// @brief Configuration for LoRA
 class LoraConfig
 {
@@ -298,6 +325,20 @@ private:
     SizeType32 mVerificationSetSize;
 };
 
+struct EagleConfig
+{
+    explicit EagleConfig(std::optional<EagleChoices> eagleChoices = std::nullopt);
+
+    bool operator==(EagleConfig const& other) const;
+    [[nodiscard]] std::optional<EagleChoices> getEagleChoices() const;
+
+private:
+    friend class Serialization;
+
+    /// @brief choices forming tree for EAGLE-1.
+    std::optional<EagleChoices> mEagleChoices;
+};
+
 class ContextPhaseParams
 {
 public:
@@ -307,9 +348,10 @@ public:
     ContextPhaseParams(VecTokens firstGenTokens, RequestIdType reqId, void* state);
 
     ContextPhaseParams(ContextPhaseParams const&);
-    ContextPhaseParams(ContextPhaseParams&&);
+    ContextPhaseParams(ContextPhaseParams&&) noexcept;
     ContextPhaseParams& operator=(ContextPhaseParams const&);
-    ContextPhaseParams& operator=(ContextPhaseParams&&);
+    ContextPhaseParams& operator=(ContextPhaseParams&&) noexcept;
+    ~ContextPhaseParams();
 
     [[nodiscard]] bool operator==(ContextPhaseParams const&) const noexcept;
 
@@ -340,12 +382,104 @@ private:
 class SpeculativeDecodingConfig
 {
 public:
-    explicit SpeculativeDecodingConfig(bool fastLogits);
+    explicit SpeculativeDecodingConfig(bool fastLogits = false);
 
     bool operator==(SpeculativeDecodingConfig const& other) const;
 
     /// @brief Send logits tensor directly from draft to target model.
     bool fastLogits;
+};
+
+using RetentionPriority = SizeType32;
+
+struct RetentionPriorityAndDuration
+{
+
+    RetentionPriorityAndDuration(std::optional<RetentionPriority> const& retentionPriority,
+        std::optional<std::chrono::milliseconds> const& durationMs)
+        : retentionPriority{retentionPriority}
+        , durationMs{durationMs}
+    {
+    }
+
+    std::optional<RetentionPriority> retentionPriority;
+    std::optional<std::chrono::milliseconds> durationMs;
+};
+
+/// @brief Configuration for the request's retention in the KV Cache
+class KvCacheRetentionConfig
+{
+
+public:
+    static constexpr RetentionPriority kMinRetentionPriority = 0;
+    static constexpr RetentionPriority kMaxRetentionPriority = 100;
+    static constexpr RetentionPriority kDefaultRetentionPriority = 35;
+
+    /// @brief A single entry to set block priorities over a token range. Earlier ranges always take priority over later
+    /// ones. For example, with a block size of 16, a range of [0, 17] would be applied to the first two blocks.
+    struct TokenRangeRetentionConfig
+    {
+    public:
+        explicit TokenRangeRetentionConfig(SizeType32 tokenStart, std::optional<SizeType32> tokenEnd = std::nullopt,
+            RetentionPriority priority = KvCacheRetentionConfig::kDefaultRetentionPriority,
+            std::optional<std::chrono::milliseconds> durationMs = std::nullopt)
+            : tokenStart{tokenStart}
+            , tokenEnd{tokenEnd}
+            , priority{priority}
+            , durationMs{durationMs}
+        {
+            TLLM_CHECK_WITH_INFO(priority >= KvCacheRetentionConfig::kMinRetentionPriority
+                    && priority <= KvCacheRetentionConfig::kMaxRetentionPriority,
+                "Invalid priority value. Must be between %d and %d", KvCacheRetentionConfig::kMinRetentionPriority,
+                KvCacheRetentionConfig::kMaxRetentionPriority);
+        };
+
+        /// @brief The first token of this range.
+        SizeType32 tokenStart;
+        /// @brief The final token of this range. The end is not included in the range. This can be set to std::nullopt
+        /// to extend the range to the end of the sequence.
+        std::optional<SizeType32> tokenEnd;
+        /// @brief The priority of this token range. Higher priorities are less likely to be evicted or offloaded.
+        RetentionPriority priority;
+        /// @brief The duration in ms that the block should remain at the given priority level. Set to std::nullopt to
+        /// have no expiration time, and keep the block at the given priority level until it gets reclaimed. After the
+        /// duration has passed, the block will be moved back to the `kDefaultRetentionPriority` level.
+        std::optional<std::chrono::milliseconds> durationMs;
+
+        bool operator==(TokenRangeRetentionConfig const& other) const
+        {
+            return tokenStart == other.tokenStart && tokenEnd == other.tokenEnd && priority == other.priority
+                && durationMs == other.durationMs;
+        }
+    };
+
+    explicit KvCacheRetentionConfig()
+        : KvCacheRetentionConfig({}, kDefaultRetentionPriority)
+    {
+    }
+
+    explicit KvCacheRetentionConfig(std::vector<TokenRangeRetentionConfig> const& tokenRangeRetentionPriorities,
+        RetentionPriority decodeRetentionPriority = kDefaultRetentionPriority,
+        std::optional<std::chrono::milliseconds> decodeDurationMs = std::nullopt);
+
+    [[nodiscard]] std::vector<TokenRangeRetentionConfig> getTokenRangeRetentionConfigs() const;
+    [[nodiscard]] RetentionPriority getDecodeRetentionPriority() const;
+    [[nodiscard]] std::optional<std::chrono::milliseconds> getDecodeDurationMs() const;
+
+    /// @brief Convert the token range data into an entry per kv block. Returns a tuple of vectors corresponding to the
+    /// priorities and durations for each block.
+    [[nodiscard]] std::vector<RetentionPriorityAndDuration> getPerBlockRetentionPriorityDuration(
+        SizeType32 blockSize, SizeType32 seqLen) const;
+
+private:
+    /// @brief The token ranges and priority levels to update. Ranges must be non-overlapping. For example [(0, 64),
+    /// (100, 128), (70, 80)] is valid, whereas
+    /// [(0, 64), (60, 128)] is not.
+    std::vector<TokenRangeRetentionConfig> mTokenRangeRetentionConfigs;
+    /// @brief The priority level to assign to blocks allocated in the decode phase
+    RetentionPriority mDecodeRetentionPriority;
+    /// @brief The duration in ms that decode blocks should remain at their assigned priority level.
+    std::optional<std::chrono::milliseconds> mDecodeDurationMs;
 };
 
 /// @brief A class that holds information about the request
@@ -367,10 +501,12 @@ public:
     /// @param badWords A list of bad words tokens. Each "word" can be composed of multiple tokens
     /// @param stopWords A list of stop words tokens. Each "word" can be composed of multiple tokens
     /// @param embeddingBias The embedding bias tensor. Expected type is kFP32 and shape is [vocab_size]
-    /// @param externalDraftTokensConfig The speculative decoding configuration
+    /// @param externalDraftTokensConfig The speculative decoding with external draft tokens configuration
     /// @param pTuningConfig The prompt tuning configuration
     /// @param loraConfig The LoRA configuration
+    /// @param lookaheadConfig The lookahead speculative decoding configuration
     /// @param logitsPostProcessorName The logits postprocessor name. Must correspond to one of the logits postprocessor
+    /// @param kvCacheRetentionConfig The configuration used for KV cache block eviction.
     /// name provided to the ExecutorConfig.
     /// @param encoderInputTokenIds The encoder input token ids for encoder-decoder models, or encoder-only models
     /// @param returnAllGeneratedTokens Indicates whether to return the full beams or just the newly generated tokens
@@ -383,6 +519,8 @@ public:
     /// @param type Indicate the request type for disaggregated serving mode.
     /// @param contextPhaseParams Generated token ID  from context only executor.
     /// @param numReturnSequences The number of returning sequences.
+    /// @param eagleConfig The EAGLE speculative decoding configuration
+    /// @param skipCrossAttnBlocks Skip the cross attention transformer blocks or not.
     Request(VecTokens inputTokenIds, SizeType32 maxTokens, bool streaming = false,
         SamplingConfig const& samplingConfig = SamplingConfig(), OutputConfig const& outputConfig = OutputConfig(),
         std::optional<SizeType32> const& endId = std::nullopt, std::optional<SizeType32> const& padId = std::nullopt,
@@ -392,8 +530,9 @@ public:
         std::optional<Tensor> embeddingBias = std::nullopt,
         std::optional<ExternalDraftTokensConfig> externalDraftTokensConfig = std::nullopt,
         std::optional<PromptTuningConfig> pTuningConfig = std::nullopt,
-        std::optional<LoraConfig> loraConfig = std::nullopt,
+        std::optional<MropeConfig> mRopeConfig = std::nullopt, std::optional<LoraConfig> loraConfig = std::nullopt,
         std::optional<LookaheadDecodingConfig> lookaheadConfig = std::nullopt,
+        std::optional<KvCacheRetentionConfig> kvCacheRetentionConfig = std::nullopt,
         std::optional<std::string> logitsPostProcessorName = std::nullopt,
         std::optional<VecTokens> encoderInputTokenIds = std::nullopt, std::optional<IdType> clientId = std::nullopt,
         bool returnAllGeneratedTokens = false, PriorityType priority = kDefaultPriority,
@@ -401,7 +540,9 @@ public:
         std::optional<ContextPhaseParams> contextPhaseParams = std::nullopt,
         std::optional<Tensor> encoderInputFeatures = std::nullopt,
         std::optional<SizeType32> encoderOutputLength = std::nullopt,
-        std::optional<Tensor> crossAttentionMask = std::nullopt, SizeType32 numReturnSequences = 1);
+        std::optional<Tensor> crossAttentionMask = std::nullopt, SizeType32 numReturnSequences = 1,
+        std::optional<EagleConfig> eagleConfig = std::nullopt,
+        std::optional<Tensor> skipCrossAttnBlocks = std::nullopt);
 
     /// @brief This logits postprocessor name will dispatch to the batched logits postprocessor
     static auto constexpr kBatchedPostProcessorName = "batched";
@@ -426,8 +567,10 @@ public:
     [[nodiscard]] std::optional<Tensor> getEmbeddingBias() const;
     [[nodiscard]] std::optional<ExternalDraftTokensConfig> getExternalDraftTokensConfig() const;
     [[nodiscard]] std::optional<PromptTuningConfig> getPromptTuningConfig() const;
+    [[nodiscard]] std::optional<MropeConfig> getMropeConfig() const;
     [[nodiscard]] std::optional<LoraConfig> getLoraConfig() const;
     [[nodiscard]] std::optional<LookaheadDecodingConfig> getLookaheadConfig() const;
+    [[nodiscard]] std::optional<KvCacheRetentionConfig> getKvCacheRetentionConfig() const;
     [[nodiscard]] std::optional<std::string> getLogitsPostProcessorName() const;
     [[nodiscard]] std::optional<VecTokens> getEncoderInputTokenIds() const;
     [[nodiscard]] std::optional<IdType> getClientId() const;
@@ -439,6 +582,8 @@ public:
     [[nodiscard]] std::optional<Tensor> getCrossAttentionMask() const;
     [[nodiscard]] RequestType getRequestType() const;
     [[nodiscard]] SizeType32 getNumReturnSequences() const;
+    [[nodiscard]] std::optional<EagleConfig> getEagleConfig() const;
+    [[nodiscard]] std::optional<Tensor> getSkipCrossAttnBlocks() const;
 
     void setStreaming(bool streaming);
     void setSamplingConfig(SamplingConfig const& config);
@@ -451,8 +596,10 @@ public:
     void setEmbeddingBias(Tensor const& embeddingBias);
     void setExternalDraftTokensConfig(ExternalDraftTokensConfig const& externalDraftTokensConfig);
     void setPromptTuningConfig(PromptTuningConfig const& pTuningConfig);
+    void setMropeConfig(MropeConfig const& mRopeConfig);
     void setLoraConfig(LoraConfig const& loraConfig);
     void setLookaheadConfig(LookaheadDecodingConfig const& lookaheadConfig);
+    void setKvCacheRetentionConfig(KvCacheRetentionConfig const& kvCacheRetentionConfig);
     void setLogitsPostProcessorName(std::string const& logitsPostProcessorName);
     void setEncoderInputTokenIds(VecTokens const& encoderInputTokenIds);
     void setClientId(IdType clientId);
@@ -464,6 +611,8 @@ public:
     void setEncoderOutputLength(SizeType32 encoderOutputLength);
     void setCrossAttentionMask(Tensor crossAttentionMask);
     void setNumReturnSequences(SizeType32 numReturnSequences);
+    void setEagleConfig(std::optional<EagleConfig> const& eagleConfig);
+    void setSkipCrossAttnBlocks(Tensor skipCrossAttnBlocks);
 
 private:
     friend class Serialization;
@@ -479,6 +628,9 @@ struct SpeculativeDecodingFastLogitsInfo
 
     /// @brief MPI world rank of the draft model leader
     int32_t draftParticipantId;
+
+    /// @brief Returns the struct serialized into a tensor that can be used as generation logits input
+    [[nodiscard]] Tensor toTensor() const;
 };
 
 /// @brief Struct that holds the generation result
@@ -517,7 +669,10 @@ struct Result
     /// @brief The params of the context phase.
     std::optional<ContextPhaseParams> contextPhaseParams;
 
-    /// @brief The decoding iterations it takes.
+    /// @brief The number of the decoding iterations used to generate the result.
+    /// In autoregressive decoding, it is equal to the maximum length of the beam in outputTokenIds.
+    /// In speculative decoding, might be less than maximum length of the beam in outputTokenIds as more than
+    /// one token can be generated per iteration. Used for speculative decoding statistics.
     SizeType32 decodingIter{0};
 
     /// @brief The index of the output sequence of this result where 0 <= sequenceIndex < numReturnSequences.
@@ -566,19 +721,62 @@ private:
     std::unique_ptr<Impl> mImpl;
 };
 
+/// @brief Configuration class for dynamic tuning of batch size and max num tokens. During runtime the statistics of
+/// input and output lengths are recoreded. Based on these statistics, the batch size and max num tokens are tuned
+/// dynamically to better serve the requests.
+class DynamicBatchConfig
+{
+public:
+    /// @brief The default window size for moving average of input and output length which is used to calculate dynamic
+    /// batch size and max num tokens
+    static SizeType32 const kDefaultDynamicBatchMovingAverageWindow = 128;
+
+    explicit DynamicBatchConfig(bool enableBatchSizeTuning = false,
+        SizeType32 dynamicBatchMovingAverageWindow = kDefaultDynamicBatchMovingAverageWindow,
+        std::vector<std::pair<SizeType32, SizeType32>> batchSizeTable = kDefaultBatchSizeTable);
+
+    [[nodiscard]] SizeType32 getDynamicBatchMovingAverageWindow() const;
+
+    [[nodiscard]] bool getEnableBatchSizeTuning() const;
+
+    [[nodiscard]] std::vector<std::pair<SizeType32, SizeType32>> getBatchSizeTable() const;
+
+    /// @brief The default value of batch size table
+    static std::vector<std::pair<SizeType32, SizeType32>> const kDefaultBatchSizeTable;
+
+private:
+    friend class Serialization;
+
+    /// @brief Controls if the batch size should be tuned dynamically
+    bool mEnableBatchSizeTuning;
+
+    /// @brief The window size for moving average of input and output length which is used to calculate dynamic batch
+    /// size and max num tokens
+    SizeType32 mDynamicBatchMovingAverageWindow;
+
+    /// @brief A vector of (batchSizeLimit, batchSize). When max capacity batch size is less than
+    // batchSizeLimit_{i} but greater or equal to batchSizeLimit_{i-1}, the batch size will be batchSize_{i}.
+    // For max capcity batch size beyond the last batchSizeLimit, the batch size may be rounded down to multiple of 512
+    // based on the actual implementation.
+    std::vector<std::pair<SizeType32, SizeType32>> mBatchSizeTable;
+};
+
 /// @brief Configuration class for the scheduler
 class SchedulerConfig
 {
 public:
     explicit SchedulerConfig(
         CapacitySchedulerPolicy capacitySchedulerPolicy = CapacitySchedulerPolicy::kGUARANTEED_NO_EVICT,
-        std::optional<ContextChunkingPolicy> contextChunkingPolicy = std::nullopt);
+        std::optional<ContextChunkingPolicy> contextChunkingPolicy = std::nullopt,
+        std::optional<DynamicBatchConfig> dynamicBatchConfig = std::nullopt);
 
     bool operator==(SchedulerConfig const& other) const;
 
     [[nodiscard]] CapacitySchedulerPolicy getCapacitySchedulerPolicy() const;
 
     [[nodiscard]] std::optional<ContextChunkingPolicy> getContextChunkingPolicy() const;
+
+    [[nodiscard]] std::optional<DynamicBatchConfig> getDynamicBatchConfig() const;
 
 private:
     friend class Serialization;
@@ -588,6 +786,9 @@ private:
 
     /// @brief The context chunking policy. See ContextChunkingPolicy.
     std::optional<ContextChunkingPolicy> mContextChunkingPolicy;
+
+    /// @brief The config for tuning batch size dynamically. See DynamicBatchSizeConfig.
+    std::optional<DynamicBatchConfig> mDynamicBatchConfig;
 };
 
 /// @brief Configuration class for the KV cache
@@ -598,23 +799,33 @@ public:
         std::optional<std::vector<SizeType32>> const& maxAttentionWindowVec = std::nullopt,
         std::optional<SizeType32> const& sinkTokenLength = std::nullopt,
         std::optional<FloatType> const& freeGpuMemoryFraction = std::nullopt,
-        std::optional<size_t> const& hostCacheSize = std::nullopt, bool onboardBlocks = true);
+        std::optional<size_t> const& hostCacheSize = std::nullopt, bool onboardBlocks = true,
+        std::optional<FloatType> const& crossKvCacheFraction = std::nullopt,
+        std::optional<RetentionPriority> secondaryOffloadMinPriority = std::nullopt, size_t eventBufferMaxSize = 0,
+        std::optional<tensorrt_llm::runtime::RuntimeDefaults> const& runtimeDefaults = std::nullopt);
 
     [[nodiscard]] bool getEnableBlockReuse() const;
     [[nodiscard]] std::optional<SizeType32> getMaxTokens() const;
     [[nodiscard]] std::optional<std::vector<SizeType32>> getMaxAttentionWindowVec() const;
     [[nodiscard]] std::optional<SizeType32> getSinkTokenLength() const;
     [[nodiscard]] std::optional<FloatType> getFreeGpuMemoryFraction() const;
+    [[nodiscard]] std::optional<FloatType> getCrossKvCacheFraction() const;
     [[nodiscard]] std::optional<size_t> getHostCacheSize() const;
     [[nodiscard]] bool getOnboardBlocks() const;
+    [[nodiscard]] std::optional<RetentionPriority> getSecondaryOffloadMinPriority() const;
+    [[nodiscard]] size_t getEventBufferMaxSize() const;
 
     void setEnableBlockReuse(bool enableBlockReuse);
     void setMaxTokens(SizeType32 maxTokens);
     void setMaxAttentionWindowVec(std::vector<SizeType32> maxAttentionWindowVec);
     void setSinkTokenLength(SizeType32 sinkTokenLength);
     void setFreeGpuMemoryFraction(FloatType freeGpuMemoryFraction);
+    void setCrossKvCacheFraction(FloatType crossKvCacheFraction);
     void setHostCacheSize(size_t hostCacheSize);
     void setOnboardBlocks(bool onboardBlocks);
+    void setSecondaryOffloadMinPriority(std::optional<RetentionPriority> secondaryOffloadMinPriority);
+    void setEventBufferMaxSize(size_t eventBufferMaxSize);
+    void fillEmptyFieldsFromRuntimeDefaults(tensorrt_llm::runtime::RuntimeDefaults runtimeDefaults);
 
 private:
     friend class Serialization;
@@ -641,12 +852,24 @@ private:
     /// allocated.
     std::optional<FloatType> mFreeGpuMemoryFraction;
 
+    /// @brief The fraction of the KV Cache memory should be reserved for cross attention
+    /// If set to p, self attention will use 1-p of KV Cache memory and cross attention
+    /// will use p of KV Cache memory. Default is 50%.
+    /// Should only be set when using encoder-decoder model.
+    std::optional<FloatType> mCrossKvCacheFraction;
+
     /// @brief Size of secondary memory pool in bytes. Default is 0.
     /// Having a secondary memory pool increases KV cache block reuse potential.
     std::optional<size_t> mHostCacheSize;
 
     /// @brief Controls whether offloaded blocks should be onboarded back into primary memory before being reused.
     bool mOnboardBlocks;
+
+    /// @brief Only blocks with priority > mSecondaryOfflineMinPriority can be offloaded to secondary memory.
+    std::optional<RetentionPriority> mSecondaryOffloadMinPriority;
+
+    /// @brief Max size of the KV cache event buffer
+    size_t mEventBufferMaxSize;
 };
 
 /// @brief Configuration class for the runtime perf knobs
@@ -856,7 +1079,8 @@ class DecodingConfig
 public:
     explicit DecodingConfig(std::optional<DecodingMode> decodingMode = std::nullopt,
         std::optional<LookaheadDecodingConfig> lookaheadDecodingConfig = std::nullopt,
-        std::optional<MedusaChoices> medusaChoices = std::nullopt);
+        std::optional<MedusaChoices> medusaChoices = std::nullopt,
+        std::optional<EagleConfig> eagleConfig = std::nullopt);
 
     bool operator==(DecodingConfig const& other) const;
 
@@ -875,6 +1099,11 @@ public:
     void setMedusaChoices(MedusaChoices const&);
     [[nodiscard]] std::optional<MedusaChoices> getMedusaChoices() const;
 
+    // EAGLE methods.
+    /// @brief Sets eagle mode and config.
+    void setEagleConfig(EagleConfig const&);
+    [[nodiscard]] std::optional<EagleConfig> getEagleConfig() const;
+
 private:
     friend class Serialization;
 
@@ -884,6 +1113,8 @@ private:
     std::optional<LookaheadDecodingConfig> mLookaheadDecodingConfig;
     // Medusa params.
     std::optional<MedusaChoices> mMedusaChoices;
+    // Eagle config.
+    std::optional<EagleConfig> mEagleConfig;
 };
 
 class LogitsPostProcessorConfig
@@ -1039,6 +1270,113 @@ private:
     std::optional<SpeculativeDecodingConfig> mSpeculativeDecodingConfig;
 };
 
+struct KVCacheCreatedData
+{
+    /// @brief The amount of blocks at each cache level
+    std::vector<SizeType32> numBlocksPerCacheLevel;
+};
+
+/// @brief An entry for a single block stored into the tree
+struct KVCacheStoredBlockData
+{
+
+    KVCacheStoredBlockData(IdType blockHash, tensorrt_llm::runtime::VecUniqueTokens const& tokens,
+        tensorrt_llm::runtime::LoraTaskIdType loraId, SizeType32 cacheLevel, SizeType32 priority)
+        : blockHash{blockHash}
+        , tokens{tokens}
+        , loraId{loraId}
+        , cacheLevel{cacheLevel}
+        , priority{priority}
+    {
+    }
+
+    /// @brief The hash of the block
+    IdType blockHash;
+    /// @brief The unique tokens of the block
+    tensorrt_llm::runtime::VecUniqueTokens tokens;
+    /// @brief The Lora task id of the block
+    tensorrt_llm::runtime::LoraTaskIdType loraId;
+    /// @brief The cache level of the block
+    SizeType32 cacheLevel;
+    /// @brief The priority of the block
+    SizeType32 priority;
+};
+
+struct KVCacheStoredData
+{
+    /// @brief The parent of this sequence of stored blocks
+    std::optional<IdType> parentHash;
+    /// @brief A sequence of blocks. The parent of block `i` is block `i-1`
+    std::vector<KVCacheStoredBlockData> blocks;
+};
+
+struct KVCacheRemovedData
+{
+    /// @brief The hashes of blocks being removed
+    std::vector<IdType> blockHashes;
+};
+
+template <typename T>
+struct KVCacheEventDiff
+{
+    T oldValue;
+    T newValue;
+};
+
+struct KVCacheUpdatedData
+{
+
+    explicit KVCacheUpdatedData(IdType blockHash)
+        : blockHash{blockHash} {};
+
+    KVCacheUpdatedData& cacheLevelUpdated(SizeType32 oldValue, SizeType32 newValue)
+    {
+        cacheLevel = KVCacheEventDiff<SizeType32>{oldValue, newValue};
+        return *this;
+    }
+
+    KVCacheUpdatedData& priorityUpdated(SizeType32 oldValue, SizeType32 newValue)
+    {
+        priority = KVCacheEventDiff<SizeType32>{oldValue, newValue};
+        return *this;
+    }
+
+    /// @brief The hash of the updated block
+    IdType blockHash;
+    /// @brief The updated value of the cacheLevel field
+    std::optional<KVCacheEventDiff<SizeType32>> cacheLevel = std::nullopt;
+    /// @brief The updated value of the priority field
+    std::optional<KVCacheEventDiff<SizeType32>> priority = std::nullopt;
+};
+
+using KVCacheEventData = std::variant<KVCacheCreatedData, KVCacheStoredData, KVCacheRemovedData, KVCacheUpdatedData>;
+
+struct KVCacheEvent
+{
+
+    KVCacheEvent(IdType eventId, KVCacheEventData data);
+
+    /// @brief The unique id of this event
+    IdType eventId;
+    /// @brief The data corresponding to this event
+    KVCacheEventData data;
+};
+
+/// @brief Exposes a limited set of KV cache manager functionalities
+class KVCacheEventManager
+{
+public:
+    KVCacheEventManager(std::shared_ptr<tensorrt_llm::batch_manager::kv_cache_manager::KVCacheManager> kvCacheManager);
+
+    /// @brief Get the latest KV Cache events.
+    /// @param timeout The maximum time to wait for new events. If nullopt, will only return when new events are
+    /// available, or when the executor instance has shutdown.
+    std::deque<KVCacheEvent> getLatestEvents(std::optional<std::chrono::milliseconds> timeout = std::nullopt);
+
+private:
+    std::shared_ptr<tensorrt_llm::batch_manager::kv_cache_manager::KVCacheManager> kvCacheManager;
+};
+
 /// @brief The executor is responsible for receiving new requests and sending responses, and running the inference
 class Executor
 {
@@ -1141,6 +1479,8 @@ public:
 
     /// @brief  Indicates if the current process participates in this executor instance
     [[nodiscard]] bool isParticipant() const;
+
+    std::optional<std::shared_ptr<KVCacheEventManager>> getKVCacheEventManager() const;
 
 private:
     class Impl;

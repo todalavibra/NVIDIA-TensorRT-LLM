@@ -34,6 +34,7 @@ extensions = [
     "breathe",
     'sphinx.ext.todo',
     'sphinxarg.ext',
+    'sphinx_click',
     'sphinx_copybutton'
 ]
 
@@ -45,6 +46,12 @@ myst_url_schemes = {
     "source":
     "https://github.com/NVIDIA/TensorRT-LLM/tree/" + branch_name + "/{{path}}",
 }
+
+myst_heading_anchors = 4
+
+myst_enable_extensions = [
+    "deflist",
+]
 
 autosummary_generate = True
 copybutton_exclude = '.linenos, .gp, .go'

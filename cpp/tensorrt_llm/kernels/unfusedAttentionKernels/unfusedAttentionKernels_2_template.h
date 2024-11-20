@@ -383,10 +383,12 @@ __global__ void applyBiasRopeUpdateKVCache(QKVPreprocessingParams<T, KVCacheBuff
 
             // NOTE: only spec decoding needs the position offsets.
             // In the generation phase, we assume all sequences should have the same input length.
-            int const rotary_position = params.spec_decoding_position_offsets != nullptr
-                ? (params.spec_decoding_position_offsets[local_token_idx + batch_idx * params.max_input_seq_len]
-                    + cache_seq_len - actual_seq_len)
-                : token_idx_in_seq;
+            int const rotary_position
+                = (params.spec_decoding_position_offsets != nullptr ? (
+                       params.spec_decoding_position_offsets[local_token_idx + batch_idx * params.max_input_seq_len]
+                       + cache_seq_len - actual_seq_len)
+                                                                    : token_idx_in_seq)
+                + (params.mrope_position_deltas != nullptr ? params.mrope_position_deltas[batch_idx] : 0);
 
             if (!valid_token)
             {
@@ -753,8 +755,18 @@ __global__ void applyBiasRopeUpdateKVCacheV2(QKVPreprocessingParams<T, KVCacheBu
         }
 
         // Cos/sin cache.
-        [[maybe_unused]] float2 const* rotary_coef_cache_buffer
-            = params.rotary_coef_cache_buffer + static_cast<size_t>(rotary_position) * params.half_rotary_dim;
+        [[maybe_unused]] float2 const* rotary_coef_cache_buffer = nullptr;
+        if (params.mrope_rotary_sin_cos != nullptr)
+        {
+            rotary_coef_cache_buffer = params.mrope_rotary_sin_cos + batch_idx * params.rotary_embedding_max_positions
+                + static_cast<size_t>(rotary_position) * params.half_rotary_dim;
+        }
+        else
+        {
+            rotary_coef_cache_buffer
+                = params.rotary_coef_cache_buffer + static_cast<size_t>(rotary_position) * params.half_rotary_dim;
+        }
+
         if constexpr (ROTARY_TYPE == RotaryPositionEmbeddingType::GPT_NEOX)
         {
             rotary_coef_cache_buffer += gptneox_rotary_dim_idx;
@@ -892,7 +904,8 @@ __global__ void applyBiasRopeUpdateKVCacheV2(QKVPreprocessingParams<T, KVCacheBu
     grid.z = std::min(int(divUp(params.multi_processor_count * WARPS_PER_SM, grid.x * grid.y)),                        \
         int(divUp(params.batch_size, MIN_SEQUENCES_PER_WARP)));                                                        \
     if (params.position_embedding_type == PositionEmbeddingType::kROPE_GPT_NEOX                                        \
-        || params.position_embedding_type == PositionEmbeddingType::kLONG_ROPE)                                        \
+        || params.position_embedding_type == PositionEmbeddingType::kLONG_ROPE                                         \
+        || params.position_embedding_type == PositionEmbeddingType::kROPE_M)                                           \
     {                                                                                                                  \
         applyBiasRopeUpdateKVCache<T, TCache, Dh_MAX, ADD_BIAS, STORE_QKV, KVCacheBuffer,                              \
             RotaryPositionEmbeddingType::GPT_NEOX, DYNAMIC_ROTARY_SCALING, FP8_OUTPUT>                                 \
@@ -946,7 +959,8 @@ void kernelDispatchHeadSize(QKVPreprocessingParams<T, KVCacheBuffer> params, cud
     constexpr int VEC_SIZE = Rotary_vec_t<T, Dh_MAX>::size;
     // Make sure we have multiple of paired vectors so that the access is aligned.
     TLLM_CHECK_WITH_INFO((params.position_embedding_type != PositionEmbeddingType::kROPE_GPT_NEOX
-                             && params.position_embedding_type != PositionEmbeddingType::kLONG_ROPE)
+                             && params.position_embedding_type != PositionEmbeddingType::kLONG_ROPE
+                             && params.position_embedding_type == PositionEmbeddingType::kROPE_M)
             || params.half_rotary_dim % VEC_SIZE == 0,
         "Rotary dim size is not supported.");
 
@@ -1002,7 +1016,8 @@ void kernelV1Dispatch(QKVPreprocessingParams<T, KVCacheBuffer> params, cudaStrea
     dim3 block(BLOCK_SIZE);                                                                                            \
     dim3 grid(int(divUp(params.max_input_seq_len, tokens_per_cuda_block)), params.batch_size, params.head_num);        \
     if (params.position_embedding_type == PositionEmbeddingType::kROPE_GPT_NEOX                                        \
-        || params.position_embedding_type == PositionEmbeddingType::kLONG_ROPE)                                        \
+        || params.position_embedding_type == PositionEmbeddingType::kLONG_ROPE                                         \
+        || params.position_embedding_type == PositionEmbeddingType::kROPE_M)                                           \
     {                                                                                                                  \
         applyBiasRopeUpdateKVCacheV2<T, TCache, BLOCK_SIZE, Dh, ADD_BIAS, STORE_QKV, FP8_OUTPUT, KVCacheBuffer,        \
             RotaryPositionEmbeddingType::GPT_NEOX><<<grid, block, 0, stream>>>(params);                                \
@@ -1063,12 +1078,12 @@ void kernelV2DispatchHeadSize(QKVPreprocessingParams<T, KVCacheBuffer> params, c
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename T, typename TCache, typename KVCacheBuffer, int BLOCK_SIZE, int Dh>
+template <typename T, typename TCache, typename KVCacheBuffer, int BLOCK_SIZE, int Dh, bool FP8_OUTPUT>
 __global__ void updateKVCacheForCrossAttention(QKVPreprocessingParams<T, KVCacheBuffer> params)
 {
     // For cross-attention,
     // 1. Load Q from params.qkv_input, and store it to params.q_output.
-    // 2. Load K,V from params.cross_qkv_input, and store it to params.kv_cache_buffer.
+    // 2. Load K,V from params.cross_kv_input, and store it to params.kv_cache_buffer.
 
     // NOTE:
     // head_num == kv_head_num
@@ -1118,8 +1133,15 @@ __global__ void updateKVCacheForCrossAttention(QKVPreprocessingParams<T, KVCache
     int const hidden_idx = head_idx * params.size_per_head + head_dim_idx;
     int const kv_head_idx = head_idx / params.qheads_per_kv_head;
     int const hidden_idx_kv = kv_head_idx * params.size_per_head + head_dim_idx;
-    int const src_k_offset = params.q_hidden_size;
-    int const src_v_offset = src_k_offset + params.kv_hidden_size;
+    int const src_v_offset = params.kv_hidden_size;
+
+    // Cast float scale to dst data type.
+    using TScale = typename mmha::kv_cache_scale_type_t<T, TCache>::Type;
+    [[maybe_unused]] TScale scale_orig_quant;
+    if constexpr (sizeof(TCache) == 1 || FP8_OUTPUT)
+    {
+        mmha::convert_from_float(&scale_orig_quant, params.kvScaleOrigQuant ? params.kvScaleOrigQuant[0] : 1.0f);
+    }
 
     // For loop in the sequence length dimension.
     // There might be multiple blocks (blockIdx.x) that process the same sequence in order to fully utilize
@@ -1139,8 +1161,18 @@ __global__ void updateKVCacheForCrossAttention(QKVPreprocessingParams<T, KVCache
             // Only load Q tokens from decoder qkv input.
             auto q = *reinterpret_cast<VecT const*>(params.qkv_input + src_q_idx);
 
-            // Store it to a separate q output.
-            *reinterpret_cast<VecT*>(params.q_output + dst_q_idx) = q;
+            // Quantize the output to fp8.
+            if constexpr (FP8_OUTPUT)
+            {
+                using OutputType = __nv_fp8_e4m3;
+                OutputType* quantized_q_ptr = reinterpret_cast<OutputType*>(params.q_output) + dst_q_idx;
+                mmha::store_8bits_vec(quantized_q_ptr, q, 0, scale_orig_quant);
+            }
+            else
+            {
+                // Store it to a separate q output.
+                *reinterpret_cast<VecT*>(params.q_output + dst_q_idx) = q;
+            }
         }
 
         // Encoder tokens (i.e. KV tokens).
@@ -1151,14 +1183,13 @@ __global__ void updateKVCacheForCrossAttention(QKVPreprocessingParams<T, KVCache
             int global_token_idx = token_idx + encoder_seq_offset;
 
             // The memory offset.
-            auto const src_k_idx
-                = static_cast<size_t>(global_token_idx) * params.hidden_size + src_k_offset + hidden_idx_kv;
+            auto const src_k_idx = static_cast<size_t>(global_token_idx) * params.kv_hidden_size * 2 + hidden_idx_kv;
             auto const src_v_idx
-                = static_cast<size_t>(global_token_idx) * params.hidden_size + src_v_offset + hidden_idx_kv;
+                = static_cast<size_t>(global_token_idx) * params.kv_hidden_size * 2 + src_v_offset + hidden_idx_kv;
 
             // Only load K,V tokens from encoder qkv input.
-            auto k = *reinterpret_cast<VecT const*>(&params.cross_qkv_input[src_k_idx]);
-            auto v = *reinterpret_cast<VecT const*>(&params.cross_qkv_input[src_v_idx]);
+            auto k = *reinterpret_cast<VecT const*>(&params.cross_kv_input[src_k_idx]);
+            auto v = *reinterpret_cast<VecT const*>(&params.cross_kv_input[src_v_idx]);
 
             // The kv cache pointers.
             auto k_cache_block_ptr
@@ -1175,10 +1206,6 @@ __global__ void updateKVCacheForCrossAttention(QKVPreprocessingParams<T, KVCache
             {
                 // The element index inside the block.
                 auto block_elt_idx = block_vec_idx * ELTS_PER_VEC;
-                // Cast float scale to dst data type.
-                using TScale = typename mmha::kv_cache_scale_type_t<T, TCache>::Type;
-                TScale scale_orig_quant;
-                mmha::convert_from_float(&scale_orig_quant, params.kvScaleOrigQuant[0]);
                 // Store 8bits kv cache.
                 mmha::store_8bits_vec(k_cache_block_ptr, k, block_elt_idx, scale_orig_quant);
                 mmha::store_8bits_vec(v_cache_block_ptr, v, block_elt_idx, scale_orig_quant);
@@ -1217,7 +1244,16 @@ void invokeUpdateKvCacheForCrossAttention(QKVPreprocessingParams<T, KVCacheBuffe
     dim3 grid(num_seq_blocks, params.head_num, params.batch_size);
 
     // Launch the kernel.
-    updateKVCacheForCrossAttention<T, TCache, KVCacheBuffer, BLOCK_SIZE, Dh><<<grid, block, 0, stream>>>(params);
+    if (params.quantized_fp8_output)
+    {
+        updateKVCacheForCrossAttention<T, TCache, KVCacheBuffer, BLOCK_SIZE, Dh, true>
+            <<<grid, block, 0, stream>>>(params);
+    }
+    else
+    {
+        updateKVCacheForCrossAttention<T, TCache, KVCacheBuffer, BLOCK_SIZE, Dh, false>
+            <<<grid, block, 0, stream>>>(params);
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1258,7 +1294,8 @@ void invokeApplyBiasRopeUpdateKVCacheDispatch(QKVPreprocessingParams<T, KVCacheB
     bool const has_sink_tokens = params.sink_token_len > 0;
     // V2 implementation requires multiple of paired 16 bytes for gpt-neox rotation.
     bool const support_rotary_for_v2 = (params.position_embedding_type != PositionEmbeddingType::kROPE_GPT_NEOX
-                                           && params.position_embedding_type != PositionEmbeddingType::kLONG_ROPE)
+                                           && params.position_embedding_type != PositionEmbeddingType::kLONG_ROPE
+                                           && params.position_embedding_type == PositionEmbeddingType::kROPE_M)
         || params.rotary_embedding_dim % 16 == 0;
 
     // Use v2 kernel for absolute_position_embedding.
