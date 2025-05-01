@@ -66,6 +66,8 @@ class SequenceInfo:
 
     - input_ids: [id_0, ..., id_{s_total-1}]
       flattened sequence of [b, 1] or [1, s_total]. We use [b, 1] to denote generate-only batches.
+      For mixed context and generate batches, we assume that the context requests are at the beginning
+      followed by the generate requests.
     - seq_len: [s_0, s_1, ..., s_{b-1}] such that s_total = sum(s_i)
       Describes how long each sequence is. For example,
       input_ids[:s_0] will correspond to sequence 0 in the batch and input_ids[s_0:s_1] will
@@ -222,7 +224,7 @@ class SequenceInfo:
 
         We want to cover the following scenarios with this function:
 
-        1. Pre-fill:
+        1. Pre-fill and mixed prefill and decode:
             input_ids: [1, s_total, ...]
             seq_len: [s_0, s_1, ..., s_{b-1}, 0, 0, ..., 0]
             ---> returns [s_0, s_1, ..., s_{b-1}]
@@ -261,7 +263,7 @@ class SequenceInfo:
     def _get_sanitized_num_sequences(input_ids: torch.Tensor, seq_len: torch.Tensor) -> int:
         """Get number of sequences.
 
-        We makes sure that this function is compatible with both torch graph capture and cudagraph.
+        We make sure that this function is compatible with both torch graph capture and cudagraph.
         Both can be a bit temparamental when trying to extract the number of sequences from a tensor
         with max_batch_size or max_batch_size*max_seq_len.
         """
@@ -328,7 +330,7 @@ class SequenceInfo:
             dtype=torch.int,
             device=self.device,
         )
-        self.pages_per_seq.fill_(seq_len // self.page_size)
+        self.pages_per_seq.fill_((seq_len + self.page_size - 1) // self.page_size)
         self.nest_sequences(input_ids)
 
     def _set_generate_only_batch(self) -> None:
