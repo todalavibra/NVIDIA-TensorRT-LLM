@@ -296,6 +296,7 @@ def main(*,
          fast_build: bool = False,
          cpp_only: bool = False,
          install: bool = False,
+         install_venv: bool = False,
          skip_building_wheel: bool = False,
          linking_install_binary: bool = False,
          python_bindings: bool = True,
@@ -679,7 +680,7 @@ def main(*,
         )
 
     if install:
-        build_run(f"\"{sys.executable}\" -m pip install -e .[devel]")
+        build_run(f"\"{venv_python if install_venv else sys.executable}\" -m pip install -e .[devel]")
 
 
 def add_arguments(parser: ArgumentParser):
@@ -690,6 +691,7 @@ def add_arguments(parser: ArgumentParser):
     parser.add_argument("--generator", "-G", default="")
     parser.add_argument("--cuda_architectures", "-a")
     parser.add_argument("--install", "-i", action="store_true")
+    parser.add_argument("--install_venv", action="store_true", help="Install into virtualenv")
     parser.add_argument("--clean", "-c", action="store_true")
     parser.add_argument("--clean_wheel",
                         action="store_true",
