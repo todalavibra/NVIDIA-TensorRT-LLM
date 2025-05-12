@@ -137,6 +137,8 @@ class LLaMAConfig(PretrainedConfig):
                 # InternLM-XComposer2 has a mask for partial lora
                 # Therefore we need an additional flag for this mask
                 has_partial_lora_mask = True
+            if hf_config.model_type == "NVLM_D":
+                hf_config = hf_config.llm_config
 
         num_key_value_heads = getattr(hf_config, "num_key_value_heads",
                                       hf_config.num_attention_heads)
