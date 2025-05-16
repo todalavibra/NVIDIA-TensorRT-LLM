@@ -47,6 +47,8 @@ class PyTorchConfig:
 
     attn_backend: str = 'TRTLLM'
     moe_backend: str = 'CUTLASS'
+    
+    moe_disable_finalize_fusion: bool = False
 
     mixed_sampler: bool = False
     """

@@ -1509,6 +1509,9 @@ class TorchLlmArgs(BaseLlmArgs):
     moe_backend: str = Field(default='CUTLASS',
                              description="MoE backend to use.")
 
+    moe_disable_finalize_fusion: bool = Field(default=False,
+                                              description="Disable FC2+finalize kernel fusion in CUTLASS MoE backend")
+
     mixed_sampler: bool = Field(
         default=False,
         description=
@@ -1663,7 +1666,9 @@ class TorchLlmArgs(BaseLlmArgs):
             autotuner_enabled=self.autotuner_enabled,
             enable_layerwise_nvtx_marker=self.enable_layerwise_nvtx_marker,
             load_format=self.load_format,
-            enable_min_latency=self.enable_min_latency)
+            enable_min_latency=self.enable_min_latency,
+            moe_disable_finalize_fusion=self.moe_disable_finalize_fusion,
+        )
 
     @field_validator('cuda_graph_max_batch_size')
     @classmethod
