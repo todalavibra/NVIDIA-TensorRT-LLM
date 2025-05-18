@@ -368,5 +368,84 @@ inline int computeMultiBlockCount(XQAParams const& xqaParams, int batch_size, in
     return multi_block_count;
 }
 
+inline int computeMultiBlockCountSpecDecGMMA(
+    XQAParams const& xqaParams, int batch_size, int multiprocessor_count, int specDecBlocks)
+{
+    auto const userSpecified = tensorrt_llm::common::getEnvXqaBlocksPerSequence();
+    if (userSpecified.has_value())
+    {
+        return userSpecified.value();
+    }
+    int multi_block_count = 1;
+
+    // skip large batch size
+    TLLM_CHECK_WITH_INFO(batch_size <= 32, "Multiblock tuning should be for only batch size <= 32");
+
+    int num_kv_heads = xqaParams.num_kv_heads;
+    int history_length = xqaParams.max_past_kv_length;
+
+    // gridDim = dim3{specDecBlocks, multi_block, nbKVHeads * xqaParams.batch_size}
+    int single_block_count = specDecBlocks * num_kv_heads * batch_size;
+    double wave_count = (double) single_block_count / (double) multiprocessor_count;
+
+    // Multi block tuning for low CTA: populating CTAs to at most 1 wave of SMs
+    if (wave_count < 1)
+    {
+        auto highestPowerof2 = [](int x)
+        {
+            x |= x >> 1;
+            x |= x >> 2;
+            x |= x >> 4;
+            x |= x >> 8;
+            x |= x >> 16;
+            return x ^ (x >> 1);
+        };
+
+        // calculate the maximum blocks to be populated at most 1 wave
+        multi_block_count = floor(multiprocessor_count / single_block_count);
+        // make multi_block_count a power of 2 for tuning convenience.
+        multi_block_count = highestPowerof2(multi_block_count);
+        // make multi_block_count at most 64 and at least 1.
+        multi_block_count = std::min(multi_block_count, 64);
+        multi_block_count = std::max(multi_block_count, 1);
+
+        // tune only when original CTA is too small, multi_block_count is too big, and history length < 2^16
+        // For Hopper, most cases there are 114, 132, 144 SMs. For H20 about 78.
+        // single_block_count = [1..8]
+        // multi_block_count = [16,32,64,128]
+        // history_length = [1024..65536]
+        if (single_block_count <= 8 && multi_block_count >= 16 && history_length < 65536)
+        {
+            if (history_length <= 1024)
+            {
+                // for history length <= 1024 and low CTA, scaling is not effective, so we set a hard limit to
+                // multi_block_count = 4
+                multi_block_count = std::min(multi_block_count, 4);
+            }
+            else if (history_length < 65536)
+            {
+                // at single_block == 8, multi_block_count can only be 16. (SM / 8 ~= 16)
+                // tune only 1024 < kvlen < 8192
+                if (single_block_count == 8 && history_length <= 8192)
+                {
+                    multi_block_count >>= 1;
+                }
+                else
+                {
+                    auto getLog2 = [](int x) { return x ? 31 - __builtin_clz(x) : -1; };
+                    auto history_length_log2 = getLog2(history_length);
+                    multi_block_count >>= 3 - (history_length_log2 - 10) / 2;
+                    // 2^15 (< 65536) -> shift 1
+                    // 2^13, 2^14 -> shift 2
+                    // 2^11, 2^12 (> 1024) -> shift 3
+                }
+            }
+        }
+        TLLM_CHECK_WITH_INFO((multi_block_count * single_block_count) <= multiprocessor_count,
+            "The adjusted MultiBlock exceed number of SMs, adding additional wave may result to perf drop.");
+    }
+    return multi_block_count;
+}
+
 } // namespace kernels
 } // namespace tensorrt_llm
