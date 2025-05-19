@@ -416,16 +416,16 @@ inline int computeMultiBlockCountSpecDecGMMA(
         // history_length = [1024..65536]
         if (single_block_count <= 8 && multi_block_count >= 16 && history_length < 65536)
         {
-            if (history_length <= 1024)
+            if (history_length < 2048)
             {
-                // for history length <= 1024 and low CTA, scaling is not effective, so we set a hard limit to
+                // for history length < 2048 and low CTA, scaling is not effective, so we set a hard limit to
                 // multi_block_count = 4
                 multi_block_count = std::min(multi_block_count, 4);
             }
             else if (history_length < 65536)
             {
                 // at single_block == 8, multi_block_count can only be 16. (SM / 8 ~= 16)
-                // tune only 1024 < kvlen < 8192
+                // tune only 2048 <= kvlen < 8192
                 if (single_block_count == 8 && history_length <= 8192)
                 {
                     multi_block_count >>= 1;
