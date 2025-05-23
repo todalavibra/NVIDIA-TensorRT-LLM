@@ -378,11 +378,14 @@ inline int computeMultiBlockCountSpecDecGMMA(
     }
     int multi_block_count = 1;
 
-    // skip large batch size
-    TLLM_CHECK_WITH_INFO(batch_size <= 32, "Multiblock tuning should be for only batch size <= 32");
-
     int num_kv_heads = xqaParams.num_kv_heads;
     int history_length = xqaParams.max_past_kv_length;
+
+    // skip tuning for large BS or short ISL case.
+    if (batch_size > 32 || history_length < 2048)
+    {
+        return multi_block_count;
+    }
 
     // gridDim = dim3{specDecBlocks, multi_block, nbKVHeads * xqaParams.batch_size}
     int single_block_count = specDecBlocks * num_kv_heads * batch_size;

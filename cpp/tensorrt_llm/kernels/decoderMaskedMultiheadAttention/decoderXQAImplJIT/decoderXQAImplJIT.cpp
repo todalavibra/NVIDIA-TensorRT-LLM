@@ -380,8 +380,8 @@ void DecoderXQAImplJIT::runImpl(XQAParams const& xqaParams, KVCacheBuffer const&
     {
         multi_block = computeMultiBlockCount(xqaParams, xqaParams.batch_size, multiprocessor_count);
     }
-    // A WAR to enable Hopper XQA multi-token multi_block mode for low batch size
-    if (isSpecDec && isGMMAKernel && xqaParams.batch_size <= 32)
+    // A WAR to enable Hopper XQA multi-token multi_block mode
+    if (isSpecDec && isGMMAKernel)
     {
         multi_block
             = computeMultiBlockCountSpecDecGMMA(xqaParams, xqaParams.batch_size, multiprocessor_count, specDecBlocks);
