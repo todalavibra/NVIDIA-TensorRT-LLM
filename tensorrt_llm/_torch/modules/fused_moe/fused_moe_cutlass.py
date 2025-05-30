@@ -346,6 +346,7 @@ class CutlassFusedMoE(MoE):
             cutlass_min_latency_mode: bool = False,
             output_dtype: Optional[torch.dtype] = None,
             all_rank_num_tokens: Optional[List[int]] = None,
+            all_rank_max_num_tokens: Optional[int] = None,
             use_dp_padding: Optional[bool] = None,
             repeating_info: Tuple = (True, True),
     ) -> torch.Tensor:
@@ -408,6 +409,7 @@ class CutlassFusedMoE(MoE):
                 alltoall_info = None
                 x, token_selected_slots, token_final_scales, token_selected_experts_for_statistic, alltoall_info = \
                     self.alltoall_prepare_maybe_dispatch(all_rank_num_tokens,
+                                                         all_rank_max_num_tokens,
                                                          x,
                                                          token_selected_slots,
                                                          token_final_scales,
@@ -450,7 +452,7 @@ class CutlassFusedMoE(MoE):
                         token_selected_slots, dtype=token_final_scales.dtype)
             else:
                 raise NotImplementedError(
-                    f"Not available alltoall method type: {alltoall_method_type!r}"
+                    f"Not available alltoall method type: {self.alltoall_method_type!r}"
                 )
 
         x_sf = None
@@ -646,6 +648,7 @@ class CutlassFusedMoE(MoE):
         do_finalize: bool = True,
         output_dtype: Optional[torch.dtype] = None,
         all_rank_num_tokens: Optional[List[int]] = None,
+        all_rank_max_num_tokens: Optional[int] = None,
         use_dp_padding: Optional[bool] = None,
     ) -> torch.Tensor:
         if self.use_dp:
@@ -667,7 +670,7 @@ class CutlassFusedMoE(MoE):
             ), "cutlass_min_latency_mode must be used with a single chunk and reduce_results must be False"
 
         if use_dp_padding:
-            all_rank_num_tokens_padded = [max(all_rank_num_tokens)
+            all_rank_num_tokens_padded = [all_rank_max_num_tokens
                                           ] * len(all_rank_num_tokens)
         else:
             all_rank_num_tokens_padded = all_rank_num_tokens
@@ -678,6 +681,7 @@ class CutlassFusedMoE(MoE):
                 cutlass_min_latency_mode,
                 output_dtype,
                 all_rank_num_tokens=all_rank_num_tokens_padded,
+                all_rank_max_num_tokens=all_rank_max_num_tokens,
                 use_dp_padding=use_dp_padding)
             outputs = self.reducescatter_or_allreduce(
                 outputs,
@@ -700,11 +704,19 @@ class CutlassFusedMoE(MoE):
                 all_rank_num_tokens_list = [[
                     val[idx_chunk] for val in all_rank_chunk_size_list
                 ] for idx_chunk in range(num_chunks)]
+                # For any rank with num_tokens < all_rank_max_num_tokens, the split chunk size is always
+                # smaller than split chunk size of all_rank_max_num_tokens
+                all_rank_max_num_tokens_list = split_chunk(
+                    all_rank_max_num_tokens, num_chunks)
                 chunk_size_list = all_rank_chunk_size_list[self.rank]
                 if self.enable_alltoall:
                     all_rank_num_tokens_list = [[
                         1 if val == 0 else val for val in val_list
                     ] for val_list in all_rank_num_tokens_list]
+                    all_rank_max_num_tokens_list = [
+                        1 if val == 0 else val
+                        for val in all_rank_max_num_tokens_list
+                    ]
             else:
                 all_rank_num_tokens_list = [None] * num_chunks
                 chunk_size_list = split_chunk(x.shape[0], num_chunks)
@@ -731,6 +743,9 @@ class CutlassFusedMoE(MoE):
                                 router_logits,
                                 all_rank_num_tokens=all_rank_num_tokens_list[
                                     idx_chunk] if self.use_dp else None,
+                                all_rank_max_num_tokens=
+                                all_rank_max_num_tokens_list[idx_chunk]
+                                if self.use_dp else None,
                                 use_dp_padding=use_dp_padding,
                                 repeating_info=(is_first_call, is_last_call))
                         if idx_chunk > 0:
@@ -744,6 +759,8 @@ class CutlassFusedMoE(MoE):
                             x,
                             router_logits,
                             all_rank_num_tokens=all_rank_num_tokens_list[
+                                idx_chunk] if self.use_dp else None,
+                            all_rank_max_num_tokens=all_rank_max_num_tokens_list[
                                 idx_chunk] if self.use_dp else None,
                             use_dp_padding=use_dp_padding,
                             repeating_info=(is_first_call, is_last_call))
@@ -759,6 +776,8 @@ class CutlassFusedMoE(MoE):
                         router_logits,
                         all_rank_num_tokens=all_rank_num_tokens_list[idx_chunk]
                         if self.use_dp else None,
+                        all_rank_max_num_tokens=all_rank_max_num_tokens_list[
+                            idx_chunk] if self.use_dp else None,
                         repeating_info=(is_first_call, is_last_call))
 
                 outputs_list.append(outputs)
@@ -784,26 +803,25 @@ class CutlassFusedMoE(MoE):
         return outputs
 
     def alltoall_prepare_maybe_dispatch(
-            self, all_rank_num_tokens: list, x: torch.Tensor,
-            token_selected_slots: torch.Tensor,
+            self, all_rank_num_tokens: list, all_rank_max_num_tokens: int,
+            x: torch.Tensor, token_selected_slots: torch.Tensor,
             token_final_scales: torch.Tensor,
             token_selected_experts_for_statistic: Optional[torch.Tensor]):
         top_k = self.routing_method.experts_per_token
         # gather router info
-        max_num_token = max(all_rank_num_tokens)
         token_selected_slots = torch.nn.functional.pad(
             token_selected_slots,
-            (0, 0, 0, max_num_token - token_selected_slots.shape[0]),
+            (0, 0, 0, all_rank_max_num_tokens - token_selected_slots.shape[0]),
             'constant', self.num_slots)
         token_selected_experts_for_statistic = torch.nn.functional.pad(
             token_selected_experts_for_statistic,
-            (0, 0, 0,
-             max_num_token - token_selected_experts_for_statistic.shape[0]),
-            'constant', self.num_experts
+            (0, 0, 0, all_rank_max_num_tokens -
+             token_selected_experts_for_statistic.shape[0]), 'constant',
+            self.num_experts
         ) if token_selected_experts_for_statistic is not None else None
         token_final_scales = torch.nn.functional.pad(
             token_final_scales,
-            (0, 0, 0, max_num_token - token_final_scales.shape[0]))
+            (0, 0, 0, all_rank_max_num_tokens - token_final_scales.shape[0]))
         gathered_token_selected_slots, gathered_token_final_scales, gathered_token_selected_experts_for_statistic = allgather(
             [
                 token_selected_slots, token_final_scales,
@@ -824,8 +842,8 @@ class CutlassFusedMoE(MoE):
             gathered_token_selected_slots, self.num_slots, self.ep_size)
         alltoall_info, token_selected_slots, token_final_scales = MnnvlMoe.mnnvl_moe_alltoallv_prepare(
             gathered_target_rank_ids, None, gathered_token_selected_slots,
-            gathered_token_final_scales, max_num_token, self.num_slots, top_k,
-            self.ep_rank, self.ep_size)
+            gathered_token_final_scales, all_rank_max_num_tokens,
+            self.num_slots, top_k, self.ep_rank, self.ep_size)
 
         if not self.use_postquant_alltoall:
             assert not isinstance(

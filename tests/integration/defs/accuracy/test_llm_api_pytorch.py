@@ -501,8 +501,7 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
                       overlap_scheduler, torch_compile):
         if torch_compile and mtp_nextn > 0:
             pytest.skip("https://nvbugs/5252313")
-        if torch_compile and attention_dp:
-            pytest.skip("https://nvbugs/5252559")
+
         kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.9)
         torch_compile_config = TorchCompileConfig(
             torch_compile_fullgraph=True,
@@ -546,8 +545,6 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
                             torch_compile):
         if torch_compile and mtp_nextn > 0:
             pytest.skip("https://nvbugs/5252313")
-        if torch_compile and attention_dp:
-            pytest.skip("https://nvbugs/5252559")
         if torch_compile and pp_size > 1:
             pytest.skip("PP with torch.compile is not supported yet.")
         kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.9)
@@ -593,8 +590,6 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
                               overlap_scheduler, torch_compile):
         if torch_compile and mtp_nextn > 0:
             pytest.skip("https://nvbugs/5252313")
-        if torch_compile and attention_dp:
-            pytest.skip("https://nvbugs/5252559")
         kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.9)
         torch_compile_config = TorchCompileConfig(
             torch_compile_fullgraph=True,
@@ -713,8 +708,6 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
                                     overlap_scheduler, torch_compile):
         if torch_compile and mtp_nextn > 0:
             pytest.skip("https://nvbugs/5252313")
-        if torch_compile and attention_dp:
-            pytest.skip("https://nvbugs/5252559")
         if torch_compile and pp_size > 1:
             pytest.skip("PP with torch.compile is not supported yet.")
         kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.9)
@@ -792,9 +785,7 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
             task.evaluate(llm)
 
     @skip_pre_blackwell
-    @parametrize_with_ids(
-        "torch_compile",
-        [False, pytest.param(True, marks=skip_device_contain_gb200)])
+    @parametrize_with_ids("torch_compile", [False, True])
     @parametrize_with_ids("fp8kv,attention_dp,cuda_graph,overlap_scheduler",
                           [(False, False, False, False),
                            (True, False, False, False),
@@ -804,8 +795,6 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
                            (True, False, True, True), (True, True, True, True)])
     def test_nvfp4(self, fp8kv, attention_dp, cuda_graph, overlap_scheduler,
                    torch_compile):
-        if torch_compile and attention_dp:
-            pytest.skip("https://nvbugs/5252559")
         kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.9)
         torch_compile_config = TorchCompileConfig(
             torch_compile_fullgraph=True,
@@ -842,9 +831,7 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
 
     @pytest.mark.skip_less_device(4)
     @skip_pre_blackwell
-    @parametrize_with_ids(
-        "torch_compile",
-        [False, pytest.param(True, marks=skip_device_contain_gb200)])
+    @parametrize_with_ids("torch_compile", [False, True])
     @parametrize_with_ids("fp8kv,attention_dp,cuda_graph,overlap_scheduler",
                           [(False, False, False, False),
                            (True, False, False, False),
@@ -858,8 +845,6 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
     def test_nvfp4_4gpus(self, fp8kv, attention_dp, cuda_graph,
                          overlap_scheduler, tp_size, pp_size, ep_size,
                          torch_compile):
-        if torch_compile and attention_dp:
-            pytest.skip("https://nvbugs/5252559")
         if torch_compile and pp_size > 1:
             pytest.skip("PP with torch.compile is not supported yet.")
         kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.9)

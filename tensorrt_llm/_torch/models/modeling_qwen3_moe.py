@@ -125,6 +125,7 @@ class Qwen3MoE(nn.Module):
         hidden_states = hidden_states.view(-1, self.hidden_dim)
         use_dp_padding = False
         all_rank_num_tokens = attn_metadata.all_rank_num_tokens
+        all_rank_max_num_tokens = attn_metadata.all_rank_max_num_tokens
 
         if self.enable_attention_dp and self.mapping.tp_size > 1:
             # FP4 all_gather moves this bf16 allgather in to after topk and fp4 quantization
@@ -138,16 +139,16 @@ class Qwen3MoE(nn.Module):
                     not self.experts.has_fp8_qdq and self.experts.has_nvfp4):
                 # Use padding when not using the cutlass path or when x_sf in self.experts is not None
                 use_dp_padding = True
-                max_num_token = max(all_rank_num_tokens)
                 hidden_states = torch.nn.functional.pad(
                     hidden_states,
-                    (0, 0, 0, max_num_token - hidden_states.shape[0]))
+                    (0, 0, 0, all_rank_max_num_tokens - hidden_states.shape[0]))
 
         router_logits = self.gate(hidden_states)
         final_hidden_states = self.experts(
             hidden_states,
             router_logits,
             all_rank_num_tokens=all_rank_num_tokens,
+            all_rank_max_num_tokens=all_rank_max_num_tokens,
             use_dp_padding=use_dp_padding)
 
         if not self.enable_attention_dp and self.mapping.tp_size > 1:

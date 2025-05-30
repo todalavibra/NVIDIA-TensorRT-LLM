@@ -147,10 +147,11 @@ def unswizzle_sf(sf: torch.Tensor,
     return sf_unswizzle_sliced.contiguous()
 
 
+@torch.library.custom_op("trtllm::reswizzle_sf", mutates_args=())
 def reswizzle_sf(sf: torch.Tensor,
                  row: int,
                  col: int,
-                 scaling_vector_size: int = 16):
+                 scaling_vector_size: int = 16) -> torch.Tensor:
     factor = scaling_vector_size * 4
     num_m_tiles = (row + 128 - 1) // 128
     num_k_tiles = (col + factor - 1) // factor
@@ -175,6 +176,19 @@ def reswizzle_sf(sf: torch.Tensor,
     sf_out_reshaped[:total_rows] = sf_unswizzle[:, :row].reshape(total_rows, -1)
     sf_out_swizzle = sf_out.transpose(1, 3).reshape(-1)
     return sf_out_swizzle
+
+
+@torch.library.register_fake("trtllm::reswizzle_sf")
+def _(sf, row, col, scaling_vector_size=16):
+    factor = scaling_vector_size * 4
+    num_m_tiles = (row + 128 - 1) // 128
+    num_k_tiles = (col + factor - 1) // factor
+    partition_size = num_m_tiles * num_k_tiles * 32 * 4 * 4
+    num_partitions = sf.numel() // partition_size
+    total_rows = num_partitions * row
+    num_m_tiles_out = (total_rows + 128 - 1) // 128
+    sz = num_partitions * num_m_tiles_out * 4 * 32 * num_k_tiles * 4
+    return sf.new_empty(sz)
 
 
 def next_positive_power_of_2(x: int) -> int:
