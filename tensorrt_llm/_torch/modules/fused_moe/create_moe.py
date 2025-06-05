@@ -58,7 +58,6 @@ def create_moe(
     enable_alltoall: bool = False,
     moe_load_balancer: Optional[MoeLoadBalancer] = None,
     layer_idx: Optional[int] = None,
-    pack_weights: bool = False,
 ) -> MoE:
     moe_cls = get_moe_cls(model_config, override_quant_config)
 
@@ -66,7 +65,6 @@ def create_moe(
         assert not apply_router_weight_on_input, "apply_router_weight_on_input is not supported in TRTLLMGenFusedMoE."
         assert not enable_alltoall, "enable_alltoall is not supported in TRTLLMGenFusedMoE."
         assert moe_load_balancer is None, "moe_load_balancer is not supported in TRTLLMGenFusedMoE."
-        assert not pack_weights, "pack_weights is not supported in TRTLLMGenFusedMoE."
 
         return moe_cls(
             routing_method=routing_method,
@@ -80,8 +78,6 @@ def create_moe(
             layer_idx=layer_idx,
         )
     elif moe_cls == CutlassFusedMoE:
-        assert not pack_weights, "pack_weights is not supported in CutlassFusedMoE."
-
         return moe_cls(
             routing_method=routing_method,
             num_experts=num_experts,
@@ -110,13 +106,8 @@ def create_moe(
             dtype=dtype,
             reduce_results=reduce_results,
             model_config=model_config,
-            aux_stream=aux_stream,
             weight_loading_mode=weight_loading_mode,
             apply_router_weight_on_input=apply_router_weight_on_input,
-            enable_alltoall=enable_alltoall,
-            moe_load_balancer=moe_load_balancer,
-            layer_idx=layer_idx,
-            pack_weights=pack_weights,
         )
     elif moe_cls == FluxFusedMoE:
         assert not apply_router_weight_on_input, "apply_router_weight_on_input is not supported in FluxFusedMoE."
