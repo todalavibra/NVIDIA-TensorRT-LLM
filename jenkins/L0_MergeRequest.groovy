@@ -1059,7 +1059,7 @@ def launchStages(pipeline, reuseBuild, testFilter, enableFailFast, globalVars)
                         'enableFailFast': enableFailFast,
                         'branch': branch,
                         'action': "push",
-                        'triggerByPostMerge': env.JOB_NAME ==~ /.*PostMerge.*/ ? true : false,
+                        'triggerType': env.JOB_NAME ==~ /.*PostMerge.*/ ? "post-merge" : "pre-merge",
                         'globalVars': globalVarsJson,
                     ]
 
