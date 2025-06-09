@@ -7,17 +7,16 @@ from .moe_load_balancer import MoeLoadBalancer
 from .routing import (BaseMoeRoutingMethod, DeepSeekV3MoeRoutingMethod,
                       DefaultMoeRoutingMethod,
                       Llama4RenormalizeMoeRoutingMethod,
-                      LoadBalancedMoeRoutingMethod, RenormalizeMoeRoutingMethod,
-                      RenormalizeNaiveMoeRoutingMethod, RoutingMethodType,
+                      LoadBalancedMoeRoutingMethod, Qwen3MoeRoutingMethod,
+                      RenormalizeMoeRoutingMethod, RoutingMethodType,
                       SparseMixerMoeRoutingMethod, StaticMoeRoutingMethod)
 
 __all__ = [
     "VanillaMoE", "CutlassFusedMoE", "TRTLLMGenFusedMoE",
-    "BaseMoeRoutingMethod", "MoeLoadBalancer",
-    "RenormalizeNaiveMoeRoutingMethod", "Llama4RenormalizeMoeRoutingMethod",
-    "SparseMixerMoeRoutingMethod", "LoadBalancedMoeRoutingMethod",
-    "StaticMoeRoutingMethod", "DefaultMoeRoutingMethod",
-    "DeepSeekV3MoeRoutingMethod", "RoutingMethodType",
-    "RenormalizeMoeRoutingMethod", "MoE", "MoEWeightLoadingMode", "get_moe_cls",
-    "create_moe"
+    "BaseMoeRoutingMethod", "MoeLoadBalancer", "Qwen3MoeRoutingMethod",
+    "Llama4RenormalizeMoeRoutingMethod", "SparseMixerMoeRoutingMethod",
+    "LoadBalancedMoeRoutingMethod", "StaticMoeRoutingMethod",
+    "DefaultMoeRoutingMethod", "DeepSeekV3MoeRoutingMethod",
+    "RoutingMethodType", "RenormalizeMoeRoutingMethod", "MoE",
+    "MoEWeightLoadingMode", "get_moe_cls", "create_moe"
 ]
