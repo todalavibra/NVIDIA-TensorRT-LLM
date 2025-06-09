@@ -7,7 +7,8 @@ import torch
 
 from tensorrt_llm import SamplingParams
 from tensorrt_llm._torch import LLM
-from tensorrt_llm.llmapi import EagleDecodingConfig, KvCacheConfig
+from tensorrt_llm.llmapi import (CudaGraphConfig, EagleDecodingConfig,
+                                 KvCacheConfig)
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.llm_data import llm_models_root
@@ -25,11 +26,11 @@ def test_llama_eagle3(use_cuda_graph: bool, attn_backend: str):
 
     pytorch_config = dict(
         disable_overlap_scheduler=True,
-        use_cuda_graph=use_cuda_graph,
         # Only create a single CUDA graph to prevent OOM in CI
         attn_backend=attn_backend,
-        cuda_graph_batch_sizes=[1],
     )
+    cuda_graph_config = CudaGraphConfig(
+        cuda_graph_batch_sizes=[1]) if use_cuda_graph else None
 
     kv_cache_config = KvCacheConfig(enable_block_reuse=False, )
 
@@ -47,6 +48,7 @@ def test_llama_eagle3(use_cuda_graph: bool, attn_backend: str):
         model=target_model_dir,
         **pytorch_config,
         kv_cache_config=kv_cache_config,
+        cuda_graph_config=cuda_graph_config,
         speculative_config=spec_config,
         # TODO: https://nvbugspro.nvidia.com/bug/5319281
         max_num_tokens=2048,
@@ -89,6 +91,7 @@ def test_llama_eagle3(use_cuda_graph: bool, attn_backend: str):
     llm_ref = LLM(model=target_model_dir,
                   **pytorch_config,
                   kv_cache_config=kv_cache_config,
+                  cuda_graph_config=cuda_graph_config,
                   max_num_tokens=2048,
                   max_seq_len=2048)
 
