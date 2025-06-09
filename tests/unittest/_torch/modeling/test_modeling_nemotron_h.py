@@ -5,6 +5,7 @@ from utils.util import skip_gpu_memory_less_than
 from tensorrt_llm._torch import LLM
 from tensorrt_llm.llmapi import KvCacheConfig
 from tensorrt_llm.llmapi.llm import RequestOutput
+from tensorrt_llm.llmapi.llm_args import CudaGraphConfig
 from tensorrt_llm.sampling_params import SamplingParams
 
 
@@ -44,7 +45,7 @@ def test_nemotron_h_correctness():
     nemotron_h = LLM(
         model=model_dir,
         max_batch_size=num_prompts,
-        use_cuda_graph=False,
+        cuda_graph_config=CudaGraphConfig() if False else None,
         kv_cache_config=KvCacheConfig(enable_block_reuse=False),
         enable_trtllm_sampler=True,
     )

@@ -16,9 +16,11 @@ import pytest
 
 from tensorrt_llm._torch import LLM
 from tensorrt_llm._torch.pyexecutor.config import MoeLoadBalancerConfig
-from tensorrt_llm.llmapi import (EagleDecodingConfig, KvCacheConfig,
-                                 MTPDecodingConfig, NGramDecodingConfig,
-                                 SamplingParams, TorchCompileConfig)
+from tensorrt_llm.llmapi import (CudaGraphConfig, EagleDecodingConfig,
+                                 KvCacheConfig, MTPDecodingConfig,
+                                 NGramDecodingConfig, SamplingParams,
+                                 TorchCompileConfig)
+from tensorrt_llm.llmapi.llm_args import CudaGraphConfig
 from tensorrt_llm.models.modeling_utils import QuantConfig
 from tensorrt_llm.quantization import QuantAlgo
 
@@ -221,11 +223,7 @@ class TestLlama3_1_8BInstruct(LlmapiAccuracyTestHarness):
                           extra_acc_spec="temperature=0.8,top_p=0.95")
 
     def test_eagle3(self):
-        pytorch_config = dict(
-            disable_overlap_scheduler=True,
-            use_cuda_graph=True,
-            cuda_graph_batch_sizes=[1],
-        )
+        pytorch_config = dict(disable_overlap_scheduler=True)
         kv_cache_config = KvCacheConfig(enable_block_reuse=False)
 
         eagle_model_dir = f"{llm_models_root()}/EAGLE3-LLaMA3.1-Instruct-8B"
@@ -237,6 +235,8 @@ class TestLlama3_1_8BInstruct(LlmapiAccuracyTestHarness):
 
         llm = LLM(model=target_model_dir,
                   **pytorch_config,
+                  cuda_graph_config=CudaGraphConfig(
+                      batch_sizes=[1]) if True else None,
                   kv_cache_config=kv_cache_config,
                   speculative_config=spec_config,
                   build_config=None)
@@ -272,7 +272,7 @@ class TestLlama3_1_8BInstruct(LlmapiAccuracyTestHarness):
         llm = LLM(self.MODEL_PATH,
                   guided_decoding_backend="xgrammar",
                   disable_overlap_scheduler=True,
-                  use_cuda_graph=True)
+                  cuda_graph_config=CudaGraphConfig())
         with llm:
             task = JsonModeEval(self.MODEL_NAME)
             task.evaluate(llm)
@@ -282,7 +282,7 @@ class TestLlama3_1_8BInstruct(LlmapiAccuracyTestHarness):
         llm = LLM(self.MODEL_PATH,
                   guided_decoding_backend="xgrammar",
                   disable_overlap_scheduler=True,
-                  use_cuda_graph=True,
+                  cuda_graph_config=CudaGraphConfig(),
                   tensor_parallel_size=2,
                   pipeline_parallel_size=2)
         with llm:
@@ -393,7 +393,8 @@ class TestLlama4MaverickInstruct(LlmapiAccuracyTestHarness):
                  tensor_parallel_size=tp_size,
                  pipeline_parallel_size=pp_size,
                  moe_expert_parallel_size=ep_size,
-                 use_cuda_graph=cuda_graph) as llm:
+                 cuda_graph_config=CudaGraphConfig()
+                 if cuda_graph else None) as llm:
             task = MMLU(self.MODEL_NAME)
             task.evaluate(llm)
             task = GSM8K(self.MODEL_NAME)
@@ -415,7 +416,8 @@ class TestLlama4ScoutInstruct(LlmapiAccuracyTestHarness):
                  tensor_parallel_size=tp_size,
                  pipeline_parallel_size=pp_size,
                  moe_expert_parallel_size=ep_size,
-                 use_cuda_graph=cuda_graph) as llm:
+                 cuda_graph_config=CudaGraphConfig()
+                 if cuda_graph else None) as llm:
             task = MMLU(self.MODEL_NAME)
             task.evaluate(llm)
             task = GSM8K(self.MODEL_NAME)
@@ -510,7 +512,7 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
         ) if torch_compile else None
         pytorch_config = dict(
             disable_overlap_scheduler=not overlap_scheduler,
-            use_cuda_graph=cuda_graph,
+            cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
             torch_compile_config=torch_compile_config,
         )
         mtp_config = None
@@ -557,7 +559,7 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
         ) if torch_compile else None
         pytorch_config = dict(
             disable_overlap_scheduler=not overlap_scheduler,
-            use_cuda_graph=cuda_graph,
+            cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
             torch_compile_config=torch_compile_config,
         )
         mtp_config = None
@@ -602,7 +604,6 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
         ) if torch_compile else None
         pytorch_config = dict(
             disable_overlap_scheduler=not overlap_scheduler,
-            use_cuda_graph=cuda_graph,
             torch_compile_config=torch_compile_config,
         )
 
@@ -618,6 +619,7 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
 
         llm = LLM(f"{llm_models_root()}/DeepSeek-V3-Lite/fp8",
                   kv_cache_config=kv_cache_config,
+                  cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
                   **pytorch_config,
                   quant_config=quant_config,
                   enable_attention_dp=attention_dp,
@@ -642,14 +644,11 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
         mtp_config = None
         if mtp_nextn > 0:
             mtp_config = MTPDecodingConfig(num_nextn_predict_layers=mtp_nextn)
-        pytorch_config = dict(
-            disable_overlap_scheduler=False,
-            use_cuda_graph=True,
-            cuda_graph_max_batch_size=512,
-            cuda_graph_padding_enabled=True,
-        )
+        pytorch_config = dict(disable_overlap_scheduler=False, )
         llm = LLM(f"{llm_models_root()}/DeepSeek-V3-Lite/fp8",
                   kv_cache_config=kv_cache_config,
+                  cuda_graph_config=CudaGraphConfig(max_batch_size=512,
+                                                    padding_enabled=True),
                   **pytorch_config,
                   speculative_config=mtp_config)
         assert llm.args.quant_config.quant_algo == QuantAlgo.FP8_BLOCK_SCALES
@@ -671,7 +670,6 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
             mtp_config = MTPDecodingConfig(num_nextn_predict_layers=mtp_nextn)
         pytorch_config = dict(
             disable_overlap_scheduler=False,
-            use_cuda_graph=True,
             cuda_graph_padding_enabled=True,
         )
         quant_config = QuantConfig()
@@ -680,6 +678,7 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
         llm = LLM(f"{llm_models_root()}/DeepSeek-V3-Lite/fp8",
                   tensor_parallel_size=4,
                   kv_cache_config=kv_cache_config,
+                  cuda_graph_config=CudaGraphConfig(),
                   **pytorch_config,
                   quant_config=quant_config,
                   enable_attention_dp=attention_dp,
@@ -724,7 +723,6 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
         ) if torch_compile else None
         pytorch_config = dict(
             disable_overlap_scheduler=not overlap_scheduler,
-            use_cuda_graph=cuda_graph,
             torch_compile_config=torch_compile_config,
         )
 
@@ -743,6 +741,7 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
                   pipeline_parallel_size=pp_size,
                   moe_expert_parallel_size=ep_size,
                   kv_cache_config=kv_cache_config,
+                  cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
                   **pytorch_config,
                   quant_config=quant_config,
                   enable_attention_dp=attention_dp,
@@ -777,11 +776,11 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
             num_slots=num_slots,
             initial_global_assignments=initial_global_assignments,
             layer_updates_per_iter=0)
-        pytorch_backend_options = dict(use_cuda_graph=True,
-                                       moe_load_balancer=eplb_config)
+        pytorch_backend_options = dict(moe_load_balancer=eplb_config)
         llm = LLM(f"{llm_models_root()}/DeepSeek-V3-Lite/fp8",
                   tensor_parallel_size=4,
                   moe_expert_parallel_size=4,
+                  cuda_graph_config=CudaGraphConfig() if True else None,
                   kv_cache_config=kv_cache_config,
                   **pytorch_backend_options,
                   enable_attention_dp=True)
@@ -813,7 +812,6 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
         ) if torch_compile else None
         pytorch_config = dict(
             disable_overlap_scheduler=not overlap_scheduler,
-            use_cuda_graph=cuda_graph,
             torch_compile_config=torch_compile_config,
         )
         quant_config = QuantConfig()
@@ -824,6 +822,7 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
 
         llm = LLM(f"{llm_models_root()}/DeepSeek-V3-Lite/nvfp4_moe_only",
                   kv_cache_config=kv_cache_config,
+                  cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
                   **pytorch_config,
                   quant_config=quant_config,
                   enable_attention_dp=attention_dp)
@@ -869,7 +868,6 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
         ) if torch_compile else None
         pytorch_config = dict(
             disable_overlap_scheduler=not overlap_scheduler,
-            use_cuda_graph=cuda_graph,
             torch_compile_config=torch_compile_config,
         )
 
@@ -882,6 +880,7 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
         llm = LLM(f"{llm_models_root()}/DeepSeek-V3-Lite/nvfp4_moe_only",
                   tensor_parallel_size=tp_size,
                   pipeline_parallel_size=pp_size,
+                  cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
                   moe_expert_parallel_size=ep_size,
                   kv_cache_config=kv_cache_config,
                   **pytorch_config,
@@ -926,10 +925,7 @@ class TestDeepSeekV3Lite(LlmapiAccuracyTestHarness):
 
         kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.9,
                                         enable_block_reuse=False)
-        pytorch_config = dict(
-            disable_overlap_scheduler=not overlap_scheduler,
-            use_cuda_graph=cuda_graph,
-        )
+        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler, )
         mtp_config = None
         if mtp_nextn > 0:
             mtp_config = MTPDecodingConfig(num_nextn_predict_layers=mtp_nextn)
@@ -993,7 +989,6 @@ class TestDeepSeekR1(LlmapiAccuracyTestHarness):
 
         kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.9)
         pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler,
-                              use_cuda_graph=cuda_graph,
                               moe_backend=moe_backend)
 
         quant_config = QuantConfig()
@@ -1011,6 +1006,7 @@ class TestDeepSeekR1(LlmapiAccuracyTestHarness):
                   pipeline_parallel_size=pp_size,
                   moe_expert_parallel_size=ep_size,
                   kv_cache_config=kv_cache_config,
+                  cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
                   **pytorch_config,
                   quant_config=quant_config,
                   enable_attention_dp=attention_dp,
@@ -1041,10 +1037,7 @@ class TestDeepSeekR1(LlmapiAccuracyTestHarness):
                             attention_dp, cuda_graph, overlap_scheduler,
                             max_batch_size):
         kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.9)
-        pytorch_config = dict(
-            disable_overlap_scheduler=not overlap_scheduler,
-            use_cuda_graph=cuda_graph,
-        )
+        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler, )
 
         quant_config = QuantConfig()
         quant_config.quant_algo = QuantAlgo.FP8_BLOCK_SCALES
@@ -1061,6 +1054,7 @@ class TestDeepSeekR1(LlmapiAccuracyTestHarness):
                   pipeline_parallel_size=pp_size,
                   moe_expert_parallel_size=ep_size,
                   kv_cache_config=kv_cache_config,
+                  cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
                   **pytorch_config,
                   quant_config=quant_config,
                   enable_attention_dp=attention_dp,
@@ -1182,7 +1176,8 @@ class TestNemotronUltra(LlmapiAccuracyTestHarness):
                  tensor_parallel_size=tp_size,
                  pipeline_parallel_size=pp_size,
                  moe_expert_parallel_size=ep_size,
-                 use_cuda_graph=cuda_graph) as llm:
+                 cuda_graph_config=CudaGraphConfig()
+                 if cuda_graph else None) as llm:
             task = MMLU(self.MODEL_NAME)
             task.evaluate(llm)
             task = GSM8K(self.MODEL_NAME)
@@ -1203,7 +1198,8 @@ class TestNemotronUltra(LlmapiAccuracyTestHarness):
                  tensor_parallel_size=tp_size,
                  pipeline_parallel_size=pp_size,
                  moe_expert_parallel_size=ep_size,
-                 use_cuda_graph=cuda_graph) as llm:
+                 cuda_graph_config=CudaGraphConfig()
+                 if cuda_graph else None) as llm:
             assert llm.args.quant_config.quant_algo == QuantAlgo.FP8
             assert llm.args.quant_config.kv_cache_quant_algo == QuantAlgo.FP8
             task = MMLU(self.MODEL_NAME)
@@ -1271,13 +1267,12 @@ class TestQwen3_8B(LlmapiAccuracyTestHarness):
         ids=["latency"])
     def test_fp8_block_scales(self, tp_size, pp_size, ep_size, attention_dp,
                               cuda_graph, overlap_scheduler):
-        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler,
-                              use_cuda_graph=cuda_graph)
-
+        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler)
         llm = LLM(f"{llm_models_root()}/Qwen3/Qwen3-8B-FP8",
                   tensor_parallel_size=tp_size,
                   pipeline_parallel_size=pp_size,
                   moe_expert_parallel_size=ep_size,
+                  cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
                   **pytorch_config,
                   enable_attention_dp=attention_dp)
         with llm:
@@ -1298,13 +1293,13 @@ class TestQwen3_30B_A3B(LlmapiAccuracyTestHarness):
         ids=["latency"])
     def test_fp8_block_scales(self, tp_size, pp_size, ep_size, attention_dp,
                               cuda_graph, overlap_scheduler):
-        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler,
-                              use_cuda_graph=cuda_graph)
+        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler)
 
         llm = LLM(f"{llm_models_root()}/Qwen3/Qwen3-30B-A3B-FP8",
                   tensor_parallel_size=tp_size,
                   pipeline_parallel_size=pp_size,
                   moe_expert_parallel_size=ep_size,
+                  cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
                   **pytorch_config,
                   enable_attention_dp=attention_dp)
         with llm:
@@ -1320,14 +1315,14 @@ class TestQwen3_30B_A3B(LlmapiAccuracyTestHarness):
         ids=["latency"])
     def test_fp8(self, tp_size, pp_size, ep_size, attention_dp, cuda_graph,
                  overlap_scheduler):
-        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler,
-                              use_cuda_graph=cuda_graph)
+        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler)
 
         llm = LLM(
             f"{llm_models_root()}/Qwen3/saved_models_Qwen3-30B-A3B_fp8_hf",
             tensor_parallel_size=tp_size,
             pipeline_parallel_size=pp_size,
             moe_expert_parallel_size=ep_size,
+            cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
             **pytorch_config,
             enable_attention_dp=attention_dp)
         with llm:
@@ -1355,7 +1350,6 @@ class TestQwen3_30B_A3B(LlmapiAccuracyTestHarness):
     ):
         pytorch_config = dict(
             disable_overlap_scheduler=not overlap_scheduler,
-            use_cuda_graph=cuda_graph,
             moe_backend=moe_backend,
         )
 
@@ -1364,6 +1358,7 @@ class TestQwen3_30B_A3B(LlmapiAccuracyTestHarness):
             tensor_parallel_size=tp_size,
             pipeline_parallel_size=pp_size,
             moe_expert_parallel_size=ep_size,
+            cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
             **pytorch_config,
             enable_attention_dp=attention_dp)
         with llm:
@@ -1383,13 +1378,13 @@ class TestQwen3_32B(LlmapiAccuracyTestHarness):
         ids=["latency"])
     def test_fp8_block_scales(self, tp_size, pp_size, ep_size, attention_dp,
                               cuda_graph, overlap_scheduler):
-        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler,
-                              use_cuda_graph=cuda_graph)
+        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler)
 
         llm = LLM(f"{llm_models_root()}/Qwen3/Qwen3-32B-FP8",
                   tensor_parallel_size=tp_size,
                   pipeline_parallel_size=pp_size,
                   moe_expert_parallel_size=ep_size,
+                  cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
                   **pytorch_config,
                   enable_attention_dp=attention_dp)
         with llm:
@@ -1409,8 +1404,7 @@ class TestQwen3_235B_A22B(LlmapiAccuracyTestHarness):
         ids=["latency", "throughput_latency"])
     def test_fp8(self, tp_size, pp_size, ep_size, attention_dp, cuda_graph,
                  overlap_scheduler):
-        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler,
-                              use_cuda_graph=cuda_graph)
+        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler)
 
         kv_cache_config = KvCacheConfig(free_gpu_memory_fraction=0.6)
         llm = LLM(
@@ -1418,6 +1412,7 @@ class TestQwen3_235B_A22B(LlmapiAccuracyTestHarness):
             tensor_parallel_size=tp_size,
             pipeline_parallel_size=pp_size,
             moe_expert_parallel_size=ep_size,
+            cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
             **pytorch_config,
             enable_attention_dp=attention_dp,
             kv_cache_config=kv_cache_config)
@@ -1434,14 +1429,14 @@ class TestQwen3_235B_A22B(LlmapiAccuracyTestHarness):
         ids=["latency", "throughput_latency"])
     def test_nvfp4(self, tp_size, pp_size, ep_size, attention_dp, cuda_graph,
                    overlap_scheduler):
-        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler,
-                              use_cuda_graph=cuda_graph)
+        pytorch_config = dict(disable_overlap_scheduler=not overlap_scheduler)
 
         llm = LLM(
             f"{llm_models_root()}/Qwen3/saved_models_Qwen3-235B-A22B_nvfp4_hf",
             tensor_parallel_size=tp_size,
             pipeline_parallel_size=pp_size,
             moe_expert_parallel_size=ep_size,
+            cuda_graph_config=CudaGraphConfig() if cuda_graph else None,
             **pytorch_config,
             enable_attention_dp=attention_dp)
         with llm:
