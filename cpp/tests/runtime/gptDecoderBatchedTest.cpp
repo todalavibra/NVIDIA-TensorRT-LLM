@@ -338,14 +338,13 @@ void testDecoder(nvinfer1::DataType const dtype, std::vector<SamplingConfig>& sa
     decoder.setup(decodingMode, batchSize, maxBeamWidth, dataType, modelConfig, worldConfig);
 
     decoder::DecoderState decoderState(dataType, manager);
-    if (!modelConfig.getSpeculativeDecodingMode().isNone())
-    {
-        decoderState.allocateSpeculativeDecodingBuffers(modelConfig.getSpeculativeDecodingMode(), dtype, manager);
-    }
     decoderState.setup(
         batchSize, maxBeamWidth, maxAttentionWindow, sinkTokenLength, maxSeqLength, modelConfig, worldConfig, manager);
-    decoderState.setupSpeculativeDecoding(
-        decoderState.getSpeculativeDecodingMode(), maxGeneratedTokensPerStep, modelConfig, worldConfig, manager);
+    if (!modelConfig.getSpeculativeDecodingMode().isNone())
+    {
+        decoderState.setupSpeculativeDecoding(modelConfig.getSpeculativeDecodingMode(), maxGeneratedTokensPerStep,
+            dtype, modelConfig, worldConfig, manager);
+    }
 
     // set up inputs and outputs
     tb::DecoderInputBuffers inputBuffers(batchSize, batchSize, maxGeneratedTokensPerStep, manager);
@@ -478,14 +477,13 @@ void testDecoderWavefront(nvinfer1::DataType const dtype, std::vector<SamplingCo
     decoder.setup(decodingMode, batchSize, maxBeamWidth, dataType, modelConfig, worldConfig);
 
     decoder::DecoderState decoderState(dataType, manager);
-    if (!modelConfig.getSpeculativeDecodingMode().isNone())
-    {
-        decoderState.allocateSpeculativeDecodingBuffers(modelConfig.getSpeculativeDecodingMode(), dtype, manager);
-    }
     decoderState.setup(
         batchSize, maxBeamWidth, maxAttentionWindow, sinkTokenLength, maxSeqLength, modelConfig, worldConfig, manager);
-    decoderState.setupSpeculativeDecoding(
-        decoderState.getSpeculativeDecodingMode(), maxGeneratedTokensPerStep, modelConfig, worldConfig, manager);
+    if (!modelConfig.getSpeculativeDecodingMode().isNone())
+    {
+        decoderState.setupSpeculativeDecoding(modelConfig.getSpeculativeDecodingMode(), maxGeneratedTokensPerStep,
+            dtype, modelConfig, worldConfig, manager);
+    }
 
     // set up inputs and outputs
     tb::DecoderInputBuffers inputBuffers(batchSize, batchSize, maxGeneratedTokensPerStep, manager);
@@ -633,14 +631,13 @@ void testDecoderDraft(nvinfer1::DataType const dtype, std::vector<SamplingConfig
     decoder.setup(decodingMode, batchSize, maxBeamWidth, dataType, modelConfig, worldConfig);
 
     decoder::DecoderState decoderState(dataType, manager);
-    if (!modelConfig.getSpeculativeDecodingMode().isNone())
-    {
-        decoderState.allocateSpeculativeDecodingBuffers(modelConfig.getSpeculativeDecodingMode(), dtype, manager);
-    }
     decoderState.setup(
         batchSize, maxBeamWidth, maxAttentionWindow, sinkTokenLength, maxSeqLength, modelConfig, worldConfig, manager);
-    decoderState.setupSpeculativeDecoding(
-        decoderState.getSpeculativeDecodingMode(), maxGeneratedTokensPerStep, modelConfig, worldConfig, manager);
+    if (!modelConfig.getSpeculativeDecodingMode().isNone())
+    {
+        decoderState.setupSpeculativeDecoding(modelConfig.getSpeculativeDecodingMode(), maxGeneratedTokensPerStep,
+            dtype, modelConfig, worldConfig, manager);
+    }
 
     // set up inputs and outputs
     tb::DecoderInputBuffers inputBuffers(batchSize, batchSize, maxGeneratedTokensPerStep, manager);
