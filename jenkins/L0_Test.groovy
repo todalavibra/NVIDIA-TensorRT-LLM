@@ -294,6 +294,7 @@ String getShortenedJobName(String path)
         "L1_Custom": "l1-cus",
         "L1_Nightly": "l1-nt",
         "L1_Stable": "l1-stb",
+        "BuildDockerImageSanityTest": "l0-sanity",
     ]
     def parts = path.split('/')
     // Apply nameMapping to the last part (jobName)
@@ -2120,6 +2121,9 @@ pipeline {
             steps
             {
                 script {
+                    if (env.JOB_NAME ==~ /.*BuildDockerImageSanityTest.*/) {
+                        return
+                    }
                     launchTestListCheck(this)
                 }
             }
