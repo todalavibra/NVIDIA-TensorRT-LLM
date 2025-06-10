@@ -470,7 +470,7 @@ def getCommonParameters()
 {
     return [
         'gitlabSourceRepoHttpUrl': LLM_REPO,
-        'gitlabCommit': '8166649d033109319d7d08cf9541d8996848018f',
+        'gitlabCommit': '0b93afba5bf94180ddfc5db3c20e417c073b7a35',
         'artifactPath': ARTIFACT_PATH,
         'uploadPath': UPLOAD_PATH,
     ]
@@ -641,9 +641,6 @@ pipeline {
 
                     def status = ""
                     def jobName = "/LLM/helpers/BuildDockerImageSanityTest"
-                    // def jobPath = trtllm_utils.resolveFullJobName(jobName).replace('/', '/job/').substring(1)
-                    // def jenkinsUrl = env.JENKINS_URL
-                    // def credentials = env.localJobCredentials
                     def handle = build(
                         job: jobName,
                         parameters: trtllm_utils.toBuildParameters(parameters),
