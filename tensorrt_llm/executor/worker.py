@@ -39,7 +39,7 @@ from .request import (CancellingRequest, GenerationRequest, LoRARequest,
 from .result import (GenerationResult, IterationResult, LogProbsResult,
                      ResponseWrapper, compute_logprobs)
 from .utils import (ErrorResponse, IntraProcessQueue, RequestError,
-                    WorkerCommIpcAddrs, has_event_loop, is_llm_response)
+                    WorkerCommIpcAddrs, has_event_loop)
 
 __all__ = [
     "GenerationExecutorWorker",
@@ -238,6 +238,7 @@ class GenerationExecutorWorker(GenerationExecutor):
     def await_response_task(self) -> bool:
         return self._await_response_helper()
 
+    @nvtx_range_debug("_has_background_error")
     def _has_background_error(self) -> bool:
         return not self._error_queue.empty()
 
@@ -889,6 +890,9 @@ class AwaitResponseHelper:
                 # serialized when it has error.
                 response = ErrorResponse(response.client_id, response.error_msg,
                                          response.request_id)
+                self.worker._pop_result(response.client_id)
+            elif response.is_final:
+                self.worker._pop_result(response.client_id)
             else:
                 logprobs_result = _get_logprobs(self.worker, response,
                                                 self.worker._is_pytorch_backend)
@@ -906,7 +910,47 @@ class AwaitResponseHelper:
                     self.worker.postproc_queues[wid].put(batch)
 
         if rsp_batch:
-            self.worker.result_queue.put(rsp_batch)
+            response_list = ResponseList([r._response for r in rsp_batch])
+            py_result_list = PyResultsList([r._py_result for r in rsp_batch])
+            packed_responses = PackedResponses(response_list, py_result_list)
+            self.worker.result_queue.put(packed_responses)
+
+
+class ResponseList:
+
+    def __init__(self, responses):
+        self._responses = responses
+
+    def __reduce__(self):
+        return (ResponseList.deserialize, (self.serialize(), ))
+
+    def serialize(self):
+        return tllm.serialize_responses(self._responses)
+
+    @staticmethod
+    def deserialize(s):
+        # convert string back to list
+        responses = tllm.deserialize_responses(s)
+        return ResponseList(responses)
+
+
+class PyResultsList:
+
+    def __init__(self, py_results):
+        self._py_results = py_results
+
+
+class PackedResponses:
+
+    def __init__(self, response_list, py_result_list):
+        self._response_list = response_list
+        self._py_result_list = py_result_list
+
+    def __getstate__(self):
+        return self._response_list, self._py_result_list
+
+    def __setstate__(self, state):
+        self._response_list, self._py_result_list = state
 
 
 def _get_params_for_first_rsp(
@@ -992,12 +1036,12 @@ def _send_rsp(
         else:
             postproc_batches[pid].append(inp)
 
-    # Eliminate the finished GenerationRequest instances timely, which may
-    # take considerable memory.
-    if is_llm_response(response):
-        if response.has_error() or response.result.is_final:
-            worker._pop_result(response.client_id)
-    elif isinstance(response, ErrorResponse):
-        worker._pop_result(response.client_id)
-    else:
-        raise ValueError(f"Unknown response type: {response}")
+    # # Eliminate the finished GenerationRequest instances timely, which may
+    # # take considerable memory.
+    # if is_llm_response(response):
+    #     if response.has_error() or response.result.is_final:
+    #         worker._pop_result(response.client_id)
+    # elif isinstance(response, ErrorResponse):
+    #     worker._pop_result(response.client_id)
+    # else:
+    #     raise ValueError(f"Unknown response type: {response}")

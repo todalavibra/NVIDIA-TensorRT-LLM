@@ -177,7 +177,15 @@ class GenerationExecutorProxy(GenerationExecutor):
                     res, ErrorResponse):
                 self._results.pop(client_id)
 
-        res = res if isinstance(res, list) else [res]
+        unpacked_res = []
+        assert len(res[0]._response_list._responses) == len(
+            res[0]._py_result_list._py_results), \
+            "Response list and PyResult list should have the same length"
+        for response, py_result in itertools.zip_longest(
+                res[0]._response_list._responses,
+                res[0]._py_result_list._py_results):
+            unpacked_res.append(LlmResponse(response, py_result))
+        res = unpacked_res
 
         for i in res:
             global_tracer().log_instant("IPC.get")

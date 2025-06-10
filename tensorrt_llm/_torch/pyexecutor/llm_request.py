@@ -219,16 +219,23 @@ class LlmResult:
 class LlmResponse:
     """LlmResponse wraps `bindings.executor.Response` but detour some features to Python implementation"""
 
+    _is_llm_response = True
+
     def __init__(self, response: tensorrt_llm.bindings.executor.Response,
                  py_result: PyResult):
         self._response = response
         self._py_result = py_result
+        self._has_error = response.has_error()
+        self.is_final = response.result.is_final
 
     def __getstate__(self):
-        return self._response, self._py_result
+        return self._response, self._py_result, self._has_error, self.is_final
 
     def __setstate__(self, state):
-        self._response, self._py_result = state
+        self._response, self._py_result, self._has_error, self.is_final = state
+
+    def has_error(self) -> bool:
+        return self._has_error
 
     @property
     def result(self) -> tensorrt_llm.bindings.executor.Result:
@@ -308,6 +315,20 @@ class LlmRequest(tensorrt_llm.bindings.internal.batch_manager.LlmRequest):
     @property
     def is_dummy(self):
         return self.is_attention_dp_dummy or self.is_cuda_graph_dummy
+
+
+def create_responses(requests, use_fast_logits=False, mpi_world_rank=0):
+    # responses = [r.create_response(use_fast_logits, mpi_world_rank) for r in requests]
+    cpp_responses = tensorrt_llm.bindings.internal.batch_manager.create_responses(
+        requests, use_fast_logits, mpi_world_rank)
+    responses = []
+    assert len(cpp_responses) == len(requests), \
+        f"Expected {len(requests)} responses, got {len(cpp_responses)}"
+    for cpp_response, request in zip(cpp_responses, requests):
+        responses.append(
+            LlmResponse(cpp_response, request.py_result
+                        ) if cpp_response is not None else None)
+    return responses
 
 
 def convert_wordlist(word_list) -> List[List[int]]:
