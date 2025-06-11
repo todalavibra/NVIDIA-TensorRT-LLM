@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 ###############################  LINTING, FORMATTING AND TESTING CONFIGURATION  ####################
 ####################################################################################################
 [tool.isort]
-line_length = 80
+line_length = 120
 extend_skip_glob = ["**/auto_deploy/**"]
 
 [tool.yapf]
@@ -17,19 +17,31 @@ based_on_style = "pep8"
 column_limit = 80
 
 [tool.yapfignore]
-ignore_patterns = ["**/auto_deploy/**"]
+# This should match the `include` in `[tool.ruff].
+ignore_patterns = [
+    "**/auto_deploy/**",
+    "tensorrt_llm/_common.py",
+    "tensorrt_llm/_dlpack_utils.py",
+    "tensorrt_llm/_ipc_utils.py",
+    "tensorrt_llm/_mnnvl_utils.py",
+    "tensorrt_llm/disaggregated_params.py",
+    "tensorrt_llm/engine.py",
+    "tensorrt_llm/graph_rewriting.py",
+    "tensorrt_llm/logger.py",
+    "tensorrt_llm/lora_manager.py",
+    "tensorrt_llm/module.py",
+    "tensorrt_llm/moe_config.py",
+    "tensorrt_llm/profiler.py",
+    "tensorrt_llm/prompt_adapter_manager.py",
+    "tensorrt_llm/python_plugin.py",
+    "tensorrt_llm/sampling_params.py",
+    "tensorrt_llm/top_model_mixin.py",
+]
 
 [tool.codespell]
 skip = ".git,3rdparty,tests/integration/test_input_files**,**.jsonl,**.json"
 exclude-file = "examples/models/core/whisper/tokenizer.py"
 ignore-words-list = "rouge,inout,atleast,strat,nd,subtile,thrid,improbe,NotIn,te,iteract,anythin,tru,Tracin,vEw"
-
-[tool.autoflake]
-in-place = true
-remove_all_unused_imports = true
-remove_unused_variables = true
-exclude = ["**/auto_deploy/**"]
-
 
 ####################################################################################################
 #########################  AUTO DEPLOY LINTING AND TESTING CONFIGURATION  ##########################
@@ -44,6 +56,23 @@ include = [
     "**/auto_deploy/**/*.py",
     "**/auto_deploy/**/*.pyi",
     "**/auto_deploy/**/*.ipynb",
+    # Progressively enable ruff on all the repo.
+    "tensorrt_llm/_common.py",
+    "tensorrt_llm/_dlpack_utils.py",
+    "tensorrt_llm/_ipc_utils.py",
+    "tensorrt_llm/_mnnvl_utils.py",
+    "tensorrt_llm/disaggregated_params.py",
+    "tensorrt_llm/engine.py",
+    "tensorrt_llm/graph_rewriting.py",
+    "tensorrt_llm/logger.py",
+    "tensorrt_llm/lora_manager.py",
+    "tensorrt_llm/module.py",
+    "tensorrt_llm/moe_config.py",
+    "tensorrt_llm/profiler.py",
+    "tensorrt_llm/prompt_adapter_manager.py",
+    "tensorrt_llm/python_plugin.py",
+    "tensorrt_llm/sampling_params.py",
+    "tensorrt_llm/top_model_mixin.py",
 ]
 
 
