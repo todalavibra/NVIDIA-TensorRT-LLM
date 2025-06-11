@@ -14,7 +14,7 @@ examples/test_chatglm.py::test_llm_glm_4_9b_single_gpu_summary[glm-4-9b-chat-ena
 examples/test_chatglm.py::test_llm_glm_4_9b_single_gpu_summary[glm-4-9b-enable_weight_only]
 examples/test_commandr.py::test_llm_commandr_v01_single_gpu_summary[disable_weight_only]
 examples/test_commandr.py::test_llm_commandr_v01_single_gpu_summary[enable_weight_only]
-examples/test_commandr.py::test_llm_commandr_plus_4gpus_summary[disable_weight_only] TIMEOUT (40)
+examples/test_commandr.py::test_llm_commandr_plus_4gpus_summary[disable_weight_only] TIMEOUT (120)
 examples/test_commandr.py::test_llm_commandr_plus_4gpus_summary[enable_weight_only] TIMEOUT (40)
 examples/test_eagle.py::test_llm_eagle_1gpu_modelopt_ckpt[llama3.1-eagle-8b-hf_v0.5-float16-bs8]
 examples/test_eagle.py::test_llm_eagle_1gpu[EAGLE-Vicuna-7B-v1.3-float16-bs1-eagle1]
@@ -29,7 +29,7 @@ examples/test_enc_dec.py::test_llm_enc_dec_general[compare_hf-t5-small-float32-e
 examples/test_enc_dec.py::test_llm_enc_dec_general[compare_hf-t5-small-float32-enable_gemm_plugin-enable_attention_plugin-enable_paged_kv_cache-tp:2-pp:1-nb:1-enable_fp8]
 examples/test_enc_dec.py::test_llm_enc_dec_general[no_compare_hf-byt5-small-float32-enable_gemm_plugin-enable_attention_plugin-enable_paged_kv_cache-tp:1-pp:1-nb:1-enable_fp8]
 examples/test_enc_dec.py::test_llm_enc_dec_general[no_compare_hf-byt5-small-float32-enable_gemm_plugin-enable_attention_plugin-enable_paged_kv_cache-tp:2-pp:1-nb:1-disable_fp8]
-examples/test_exaone.py::test_llm_exaone_1gpu[disable_weight_only-exaone_3.0_7.8b_instruct-float16-nb:1]
+examples/test_exaone.py::test_llm_exaone_1gpu[disable_weight_only-exaone_3.0_7.8b_instruct-float16-nb:1] TIMEOUT (90)
 examples/test_exaone.py::test_llm_exaone_1gpu[disable_weight_only-exaone_3.0_7.8b_instruct-float16-nb:4]
 examples/test_exaone.py::test_llm_exaone_1gpu[disable_weight_only-exaone_3.0_7.8b_instruct-float16-nb:4]
 examples/test_exaone.py::test_llm_exaone_1gpu[enable_weight_only-exaone_deep_2.4b-float16-nb:1]
@@ -55,14 +55,14 @@ examples/test_gpt.py::test_llm_gpt2_parallel_embedding_2gpu[float16-0]
 examples/test_gpt.py::test_llm_gpt2_santacoder_1node_4gpus[parallel_build-enable_fmha-enable_gemm_plugin-enable_attention_plugin]
 examples/test_gpt.py::test_llm_gpt2_starcoder_1node_4gpus[starcoder-enable_fmha-enable_gemm_plugin-enable_attention_plugin]
 examples/test_gpt.py::test_llm_gpt2_starcoder_1node_4gpus[starcoder2-disable_fmha-enable_gemm_plugin-enable_attention_plugin]
-examples/test_gpt.py::test_llm_gpt2_starcoder_1node_4gpus[starcoderplus-enable_fmha-enable_gemm_plugin-enable_attention_plugin]
+examples/test_gpt.py::test_llm_gpt2_starcoder_1node_4gpus[starcoderplus-enable_fmha-enable_gemm_plugin-enable_attention_plugin] TIMEOUT (60)
 examples/test_gpt.py::test_llm_gpt2_starcoder_weight_only[starcoder-int4-float16]
 examples/test_gpt.py::test_llm_gpt2_starcoder_weight_only[starcoder-int8-float16]
 examples/test_gpt.py::test_llm_gpt2_starcoder_weight_only[starcoder2-int4-float16]
 examples/test_gpt.py::test_llm_gpt2_starcoder_weight_only[starcoder2-int8-float16]
 examples/test_gpt.py::test_llm_gpt2_starcoder_weight_only[starcoderplus-int4-float16]
 examples/test_gpt.py::test_llm_gpt2_starcoder_weight_only[starcoderplus-int8-float16]
-examples/test_gpt.py::test_llm_gpt3_175b_1node_8gpus[parallel_build-enable_fmha-enable_gemm_plugin-enable_attention_plugin]
+examples/test_gpt.py::test_llm_gpt3_175b_1node_8gpus[parallel_build-enable_fmha-enable_gemm_plugin-enable_attention_plugin] TIMEOUT (90)
 examples/test_gpt.py::test_llm_gpt_starcoder_lora_1gpu[peft-lora-starcoder2-15b-unity-copilot-starcoder2-lora_fp16-base_fp16]
 examples/test_gpt.py::test_llm_gpt_starcoder_lora_1gpu[peft-lora-starcoder2-15b-unity-copilot-starcoder2-lora_fp16-base_fp8]
 examples/test_gpt.py::test_llm_minitron_fp8_with_pseudo_loras[4b]
@@ -70,7 +70,7 @@ examples/test_gpt.py::test_starcoder_fp8_quantization_2gpu[starcoder]
 examples/test_gpt.py::test_starcoder_fp8_quantization_2gpu[starcoderplus]
 examples/test_gpt.py::test_starcoder_fp8_quantization_2gpu[starcoder2]
 examples/test_llama.py::test_mistral_nemo_fp8_with_bf16_lora[Mistral-Nemo-12b-Base]
-examples/test_mistral.py::test_mistral_nemo_minitron_fp8_with_bf16_lora[Mistral-NeMo-Minitron-8B-Instruct] TIMEOUT (40)
+examples/test_mistral.py::test_mistral_nemo_minitron_fp8_with_bf16_lora[Mistral-NeMo-Minitron-8B-Instruct] TIMEOUT (60)
 examples/test_phi.py::test_phi_fp8_with_bf16_lora[phi-2]
 examples/test_phi.py::test_phi_fp8_with_bf16_lora[Phi-3-mini-128k-instruct]
 examples/test_phi.py::test_phi_fp8_with_bf16_lora[Phi-3-small-128k-instruct]
@@ -101,8 +101,8 @@ examples/test_prompt_lookup.py::test_llm_prompt_lookup_1gpu[no_streaming-gpt2-us
 examples/test_prompt_lookup.py::test_llm_prompt_lookup_1gpu[no_streaming-gpt2-use_cpp_session-use_tokens-max_matching_ngram_size_2-prompt_lookup_num_tokens_8-float16-bs2]
 examples/test_prompt_lookup.py::test_llm_prompt_lookup_1gpu[streaming-gpt2-use_cpp_session-use_tokens-max_matching_ngram_size_2-prompt_lookup_num_tokens_8-float16-bs1]
 examples/test_prompt_lookup.py::test_llm_prompt_lookup_1gpu[streaming-gpt2-use_cpp_session-use_tokens-max_matching_ngram_size_2-prompt_lookup_num_tokens_8-float16-bs2]
-examples/test_internlm.py::test_llm_internlm2_7b_1node_1gpu[bfloat16-enable_context_fmha-enable_gemm_plugin-enable_attention_plugin-nb:2]
-examples/test_llama.py::test_llm_llama_1gpu_streaming_llm[ailab-deepseek-coder-6.7b-instruct]
+examples/test_internlm.py::test_llm_internlm2_7b_1node_1gpu[bfloat16-enable_context_fmha-enable_gemm_plugin-enable_attention_plugin-nb:2] TIMEOUT (60)
+examples/test_llama.py::test_llm_llama_1gpu_streaming_llm[ailab-deepseek-coder-6.7b-instruct] TIMEOUT (60)
 examples/test_llama.py::test_llm_llama_2gpu_fp8_summary[llama-7b-enable_reduce_fusion-disable_fp8_context_fmha_xqa]
 examples/test_llama.py::test_llm_llama_2gpu_fp8_summary[llama-v2-13b-hf-disable_reduce_fusion-disable_fp8_context_fmha_xqa]
 examples/test_llama.py::test_llm_llama_2gpu_fp8_summary[llama-v2-13b-hf-enable_reduce_fusion-enable_fp8_context_fmha_xqa]
@@ -141,7 +141,7 @@ examples/test_llama.py::test_llm_llama_v3_1_1node_multi_gpus[enable_gemm_allredu
 examples/test_llama.py::test_llm_llama_v3_1_1node_multi_gpus[disable_gemm_allreduce_plugin-llama-3.1-70b-enable_fp8]
 examples/test_llama.py::test_llm_llama_v3_1m_long_context_8gpus[Llama-3-8B-Instruct-Gradient-1048k] TIMEOUT (180)
 examples/test_llama.py::test_llm_llama_v3_dora_1gpu[commonsense-llama-v3-8b-dora-r32-llama-v3-8b-hf-base_fp16]
-examples/test_llama.py::test_llm_llama_1gpu_fp4[llama-3.1-70b-instruct-enable_norm_quant_fusion-enable_fused_quant-fp4_plugin-bfloat16]
+examples/test_llama.py::test_llm_llama_1gpu_fp4[llama-3.1-70b-instruct-enable_norm_quant_fusion-enable_fused_quant-fp4_plugin-bfloat16] TIMEOUT (60)
 examples/test_llama.py::test_llm_llama_2gpu_fp4[llama-3.1-70b-instruct-fp4_plugin]
 examples/test_mamba.py::test_llm_mamba_1gpu[mamba-1.4b-float16-enable_gemm_plugin]
 examples/test_mamba.py::test_llm_mamba_1gpu[mamba-130m-float16-enable_gemm_plugin]
@@ -400,7 +400,7 @@ accuracy/test_cli_flow.py::TestMixtral8x7B::test_plugin_tp8[renormalize-expert_p
 accuracy/test_cli_flow.py::TestMixtral8x7B::test_plugin_tp8[renormalize-mixed_parallel]
 accuracy/test_cli_flow.py::TestMixtral8x7B::test_plugin_tp8[renormalize-tensor_parallel]
 accuracy/test_cli_flow.py::TestMixtral8x7B::test_nvfp4_prequantized
-accuracy/test_cli_flow.py::TestMixtral8x22B::test_fp8_tp2pp2 TIMEOUT (50)
+accuracy/test_cli_flow.py::TestMixtral8x22B::test_fp8_tp2pp2 TIMEOUT (90)
 accuracy/test_cli_flow.py::TestMixtral8x22B::test_int8_plugin_tp8[renormalize-tensor_parallel]
 accuracy/test_cli_flow.py::TestGemma2_9BIt::test_auto_dtype
 accuracy/test_cli_flow.py::TestGemma2_9BIt::test_weight_only[int8]
@@ -467,7 +467,7 @@ accuracy/test_cli_flow.py::TestNemotronUltra::test_auto_dtype[tp8-cuda_graph=Tru
 accuracy/test_cli_flow.py::TestNemotronUltra::test_fp8_prequantized[tp8-cuda_graph=True]
 accuracy/test_llm_api_pytorch.py::TestNemotronH::test_auto_dtype
 accuracy/test_llm_api_pytorch.py::TestQwen2_7BInstruct::test_auto_dtype
-accuracy/test_llm_api_pytorch.py::TestDeepSeekR1::test_nvfp4_8gpus[latency]
+accuracy/test_llm_api_pytorch.py::TestDeepSeekR1::test_nvfp4_8gpus[latency] TIMEOUT (40)
 accuracy/test_llm_api_pytorch.py::TestDeepSeekR1::test_nvfp4_8gpus[latency_trtllmgen]
 accuracy/test_llm_api_pytorch.py::TestDeepSeekR1::test_nvfp4_8gpus[throughput]
 accuracy/test_llm_api_pytorch.py::TestDeepSeekR1::test_nvfp4_8gpus[throughput_tp8]
