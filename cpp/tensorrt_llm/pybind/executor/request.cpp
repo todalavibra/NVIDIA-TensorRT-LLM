@@ -18,6 +18,7 @@
 #include "request.h"
 #include "tensorrt_llm/common/assert.h"
 #include "tensorrt_llm/common/logger.h"
+#include "tensorrt_llm/common/nvtxUtils.h"
 #include "tensorrt_llm/executor/executor.h"
 #include "tensorrt_llm/executor/serialization.h"
 #include "tensorrt_llm/executor/tensor.h"

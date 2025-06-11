@@ -151,6 +151,8 @@ class GenerationExecutorProxy(GenerationExecutor):
         self.request_queue.put(CancellingRequest(request_id))
 
     def dispatch_result_task(self) -> bool:
+        from tensorrt_llm._torch.pyexecutor.llm_request import LlmResponse
+
         # TODO[chunweiy]: convert the dispatch_result_task to async, that should
         # benefit from zmq.asyncio.Context
         if (res := self.result_queue.get()) is None:

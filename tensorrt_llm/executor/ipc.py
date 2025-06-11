@@ -115,7 +115,7 @@ class ZeroMqQueue:
         else:
             return False
 
-    def put(self, obj: Any):
+    def put(self, obj: Any, serialized: bool = False):
         self.setup_lazily()
         with nvtx_range_debug("serialization.dumps",
                               color="blue",
