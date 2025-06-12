@@ -269,7 +269,9 @@ class SlimPajama6B(AccuracyTask):
 
 class MMLU(AccuracyTask):
     DATASET = "mmlu"
-    DATASET_DIR = f"{llm_models_root()}/datasets/mmlu"
+    # TODO (williamj): change back once target model is updated.
+    # DATASET_DIR = f"{llm_models_root()}/datasets/mmlu"
+    DATASET_DIR = "/home/scratch.trt_llm_data/llm-models/datasets/mmlu"
 
     ALPHA = 0.05
     BETA = 0.2
@@ -286,7 +288,9 @@ class MMLU(AccuracyTask):
 
 class GSM8K(AccuracyTask):
     DATASET = "gsm8k"
-    DATASET_DIR = f"{llm_models_root()}/datasets/openai/gsm8k"
+    # TODO (williamj): change back once target model is updated.
+    # DATASET_DIR = f"{llm_models_root()}/datasets/openai/gsm8k"
+    DATASET_DIR = f"/home/scratch.trt_llm_data/llm-models/datasets/openai/gsm8k"
 
     ALPHA = 0.05
     BETA = 0.2
