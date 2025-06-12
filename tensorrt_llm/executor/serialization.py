@@ -90,7 +90,7 @@ BASE_ZMQ_CLASSES = {
     "tensorrt_llm.executor.utils": ["ErrorResponse", "WorkerCommIpcAddrs"],
     "tensorrt_llm.executor.worker": ["GenerationExecutorWorker", "worker_main"],
     "tensorrt_llm.llmapi.llm_args": [
-        "_ModelFormatKind", "_ParallelConfig", "CalibConfig",
+        "_ModelFormatKind", "_ParallelConfig", "CudaGraphConfig", "CalibConfig",
         "CapacitySchedulerPolicy", "KvCacheConfig", "LookaheadDecodingConfig",
         "TrtLlmArgs", "SchedulerConfig", "LoadFormat", "DynamicBatchConfig"
     ],
