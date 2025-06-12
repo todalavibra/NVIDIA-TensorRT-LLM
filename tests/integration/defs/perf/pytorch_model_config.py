@@ -32,6 +32,11 @@ def get_model_yaml_config(model_label: str) -> dict:
         'use_cuda_graph': True,
         'cuda_graph_padding_enabled': True,
     }
+    if 'kv_cache_dtype' in model_label:
+        base_config.update({
+            'kv_cache_dtype':
+            model_label.split('kv_cache_dtype:')[1].split('-')[0]
+        })
     model_configs = {
         'deepseek_r1-bench-pytorch-float16-maxbs:1-maxnt:8192-input_output_len:1000,2000-quant:fp8-reqs:10-ep:4-gpus:8':
         {
