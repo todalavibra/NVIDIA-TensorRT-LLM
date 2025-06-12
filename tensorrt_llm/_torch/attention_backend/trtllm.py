@@ -63,6 +63,10 @@ class TrtllmAttentionWrapper:
     qk_nope_head_dim: Optional[int]
     v_head_dim: Optional[int]
     attention_chunk_size: Optional[int]
+    use_spec_dec: bool
+    spec_decoding_position_offsets: Optional[torch.Tensor]
+    spec_decoding_packed_mask: Optional[torch.Tensor]
+    spec_decoding_generation_lengths: Optional[torch.Tensor]
     kwargs: dict
 
     def __init__(
@@ -167,6 +171,10 @@ class TrtllmAttentionWrapper:
         mrope_config: Optional[dict] = None,
         mla_context_paged_kv: Optional[torch.Tensor] = None,
         mla_context_kv_cache_block_offsets: Optional[torch.Tensor] = None,
+        use_spec_dec: bool = False,
+        spec_decoding_position_offsets: Optional[torch.Tensor] = None,
+        spec_decoding_packed_mask: Optional[torch.Tensor] = None,
+        spec_decoding_generation_lengths: Optional[torch.Tensor] = None,
         **kwargs,
     ):
         """
@@ -241,7 +249,10 @@ class TrtllmAttentionWrapper:
             self.rope_params.max_positions = max_sequence_length
             self.rotary_inv_freq, self.rotary_cos_sin = self.rope_params.create_rope_const_params(
             )
-
+        self.use_spec_dec = use_spec_dec
+        self.spec_decoding_position_offsets = spec_decoding_position_offsets
+        self.spec_decoding_packed_mask = spec_decoding_packed_mask
+        self.spec_decoding_generation_lengths = spec_decoding_generation_lengths
         self.kwargs.update(kwargs)
 
     def run(
@@ -382,11 +393,15 @@ class TrtllmAttentionWrapper:
             self.rotary_embedding_dim,
             self.rotary_embedding_base,
             self.rotary_embedding_scale_type,
-            self.rotary_embedding_scale,
-            self.rotary_embedding_short_m_scale,
-            self.rotary_embedding_long_m_scale,
-            self.rotary_embedding_max_positions,
-            self.rotary_embedding_original_max_positions,
+            [
+                self.rotary_embedding_scale,
+                self.rotary_embedding_short_m_scale,
+                self.rotary_embedding_long_m_scale
+            ],
+            [
+                self.rotary_embedding_max_positions,
+                self.rotary_embedding_original_max_positions
+            ],
             self.use_paged_context_fmha,
             self.attention_input_type,
             self.is_mla_enable,
@@ -400,6 +415,10 @@ class TrtllmAttentionWrapper:
             self.mla_context_paged_kv,
             self.mla_context_kv_cache_block_offsets,
             self.attention_chunk_size,
+            self.use_spec_dec,
+            self.spec_decoding_position_offsets,
+            self.spec_decoding_packed_mask,
+            self.spec_decoding_generation_lengths,
         )
         # reset the planned states (especially tensors) to avoid memory leak
         self.plan()
@@ -799,6 +818,10 @@ class TrtllmAttention(AttentionBackend[TrtllmAttentionMetadata]):
         attention_window_size: Optional[int] = None,
         mla_context_paged_kv: Optional[torch.Tensor] = None,
         mla_context_kv_cache_block_offsets: Optional[torch.Tensor] = None,
+        use_spec_dec: bool = False,
+        spec_decoding_position_offsets: Optional[torch.Tensor] = None,
+        spec_decoding_packed_mask: Optional[torch.Tensor] = None,
+        spec_decoding_generation_lengths: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> torch.Tensor:
         assert isinstance(
@@ -863,6 +886,10 @@ class TrtllmAttention(AttentionBackend[TrtllmAttentionMetadata]):
             mla_context_paged_kv=mla_context_paged_kv,
             mla_context_kv_cache_block_offsets=
             mla_context_kv_cache_block_offsets,
+            use_spec_dec=use_spec_dec,
+            spec_decoding_position_offsets=spec_decoding_position_offsets,
+            spec_decoding_packed_mask=spec_decoding_packed_mask,
+            spec_decoding_generation_lengths=spec_decoding_generation_lengths,
         )
         out_dtype = None
         if out_scale is not None:

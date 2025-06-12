@@ -584,6 +584,7 @@ class LlamaDecoderLayer(DecoderLayer):
             hidden_states=hidden_states,
             attn_metadata=attn_metadata,
             attention_mask=self.attention_mask,
+            spec_metadata=spec_metadata,
             **kwargs,
         )
 
@@ -691,6 +692,7 @@ class Eagle3LlamaDecoderLayer(DecoderLayer):
             position_ids=position_ids,
             hidden_states=hidden_states,
             attn_metadata=attn_metadata,
+            spec_metadata=spec_metadata,
         )
 
         hidden_states, residual = self.post_attention_layernorm(
