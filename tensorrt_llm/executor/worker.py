@@ -238,7 +238,6 @@ class GenerationExecutorWorker(GenerationExecutor):
     def await_response_task(self) -> bool:
         return self._await_response_helper()
 
-    @nvtx_range_debug("_has_background_error")
     def _has_background_error(self) -> bool:
         return not self._error_queue.empty()
 
@@ -1080,13 +1079,3 @@ def _send_rsp(
             worker.postproc_queues[pid].put(inp)
         else:
             postproc_batches[pid].append(inp)
-
-    # # Eliminate the finished GenerationRequest instances timely, which may
-    # # take considerable memory.
-    # if is_llm_response(response):
-    #     if response.has_error() or response.result.is_final:
-    #         worker._pop_result(response.client_id)
-    # elif isinstance(response, ErrorResponse):
-    #     worker._pop_result(response.client_id)
-    # else:
-    #     raise ValueError(f"Unknown response type: {response}")

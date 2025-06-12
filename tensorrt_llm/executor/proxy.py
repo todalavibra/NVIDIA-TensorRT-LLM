@@ -191,8 +191,6 @@ class GenerationExecutorProxy(GenerationExecutor):
                 unpacked_res.append(LlmResponse(response, py_result))
             res = unpacked_res
 
-        # res = res if isinstance(res, list) else [res]
-
         for i in res:
             global_tracer().log_instant("IPC.get")
             if i is None:

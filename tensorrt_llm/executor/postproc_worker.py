@@ -191,8 +191,6 @@ class PostprocWorker:
                              | PostprocWorker.
                              Input] = await self._pull_pipe.get_async()
 
-            # if not isinstance(inputs, list):
-            #     inputs = [inputs]
             unpacked_res = []
             for response, py_result, sampling_params, postproc_params, streaming in zip(
                     inputs[0]._response_list._responses,

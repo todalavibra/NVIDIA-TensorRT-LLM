@@ -2028,12 +2028,6 @@ class PyExecutor:
                             res._response_list._responses,
                             res._py_result_list._py_results, res._req_id_list):
                         responses[req_id] = LlmResponse(response, py_result)
-            # if self.dist.rank == 0 or self.gather_all_responses:
-            #     gather_responses = {}
-            #     if responses_list is not None:
-            #         for resp in responses_list:
-            #             gather_responses.update(resp)
-            #         responses = gather_responses
         logger.debug(
             f'after gather, rank = {self.dist.rank}, responses = {responses}')
 
@@ -2068,7 +2062,6 @@ class PyExecutor:
             f'------before _handle_responses, rank = {self.dist.rank}, output = {self.active_requests}'
         )
         for request in self.active_requests:
-            # req_id = request.py_request_id
             # no responses for dummy request, and finish it
             if request.is_attention_dp_dummy:
                 requests_to_terminate.append(request)
@@ -2089,10 +2082,8 @@ class PyExecutor:
             request.draft_tokens = request.py_draft_tokens
             request.decoding_iter = request.py_decoding_iter
 
-            # responses = create_responses(self.active_requests, False, self.dist.rank)
-            # for i, request in enumerate(self.active_requests):
-            response: Response = request.create_response(False, self.dist.rank)
-            # response = responses[i]
+            response = request.create_response(False, self.dist.rank)
+
             req_id = request.py_request_id
             request_done = False
             if response:
