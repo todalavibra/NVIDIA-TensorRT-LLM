@@ -284,6 +284,15 @@ std::string getEnvUCXInterface()
     return ucxInterface;
 }
 
+std::string getEnvNixlInterface()
+{
+    static std::once_flag flag;
+    static std::string nixlInterface;
+
+    std::call_once(flag, [&]() { char const* nixl_interface = std::getenv("TRTLLM_NIXL_INTERFACE"); });
+    return nixlInterface;
+}
+
 bool getEnvDisaggLayerwise()
 {
     static bool const disaggLayerwise = getBoolEnv("TRTLLM_DISAGG_LAYERWISE");
