@@ -417,6 +417,8 @@ def throughput_command(
         report_utility.report_statistics()
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt, exiting benchmark...")
+    except Exception as e:
+        logger.error(f"Error during benchmarking: {e}")
     finally:
         if llm is not None:
             llm.shutdown()
