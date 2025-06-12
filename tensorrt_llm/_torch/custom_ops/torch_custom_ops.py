@@ -266,11 +266,12 @@ class FP4GemmRunner(TunableRunner):
         self.fp4_gemm_type = fp4_gemm_type
         self.output_dtype = output_dtype
         self.to_userbuffers = to_userbuffers
-        if output_dtype not in FP4GemmRunner.runner_dict:
+        instance_key = (output_dtype, int(fp4_gemm_type))
+        if instance_key not in FP4GemmRunner.runner_dict:
             FP4GemmRunner.runner_dict[
-                output_dtype] = torch.classes.trtllm.FP4GemmRunner(
+                instance_key] = torch.classes.trtllm.FP4GemmRunner(
                     output_dtype, int(fp4_gemm_type))
-        self.fp4_gemm_runner = FP4GemmRunner.runner_dict[output_dtype]
+        self.fp4_gemm_runner = FP4GemmRunner.runner_dict[instance_key]
 
     def get_valid_tactics(
         self,
