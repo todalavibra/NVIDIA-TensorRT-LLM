@@ -51,8 +51,10 @@ BASE_ZMQ_CLASSES = {
     "tensorrt_llm._torch.models.modeling_vila": ["VilaModel"],
     ### ending import of torch models classes
     "tensorrt_llm._torch.pyexecutor.config": ["PyTorchConfig", "LoadFormat"],
-    "tensorrt_llm._torch.pyexecutor.llm_request":
-    ["LogitsStorage", "PyResult", "LlmResult", "LlmResponse", "LogProbStorage"],
+    "tensorrt_llm._torch.pyexecutor.llm_request": [
+        "LogitsStorage", "PyResult", "LlmResult", "LlmResponse",
+        "LogProbStorage", "ResponseList.deserialize"
+    ],
     "tensorrt_llm._torch.speculative.mtp": ["MTPConfig"],
     "tensorrt_llm._torch.speculative.interface": ["SpeculativeDecodingMode"],
     "tensorrt_llm._torch.pyexecutor.config": ["PyTorchConfig", "LoadFormat"],

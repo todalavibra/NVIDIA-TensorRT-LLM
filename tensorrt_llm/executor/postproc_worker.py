@@ -184,25 +184,13 @@ class PostprocWorker:
             if is_final:
                 self._records.pop(client_id)
 
-        from tensorrt_llm._torch.pyexecutor.llm_request import LlmResponse
         while not self._to_stop.is_set():
             batch = []
             inputs: Optional[List[PostprocWorker.Input]
                              | PostprocWorker.
                              Input] = await self._pull_pipe.get_async()
 
-            unpacked_res = []
-            for response, py_result, sampling_params, postproc_params, streaming in zip(
-                    inputs[0]._response_list._responses,
-                    inputs[0]._py_params_list.py_result_list,
-                    inputs[0]._py_params_list._sampling_params_list,
-                    inputs[0]._py_params_list._postproc_params_list,
-                    inputs[0]._py_params_list._streaming_list):
-                unpacked_res.append(
-                    PostprocWorker.Input(LlmResponse(response, py_result),
-                                         sampling_params, postproc_params,
-                                         streaming))
-            inputs = unpacked_res
+            inputs = restore_postproc_inputs(inputs[0])
 
             for inp in inputs:
                 if inp is None:
@@ -224,6 +212,30 @@ class PostprocWorker:
         except Exception as e:
             print(traceback.format_exc())
             raise e
+
+
+def make_postproc_inputs_serialize_friendly(
+        inputs: List[PostprocWorker.Input]) -> dict:
+    from tensorrt_llm._torch.pyexecutor.llm_request import ResponseList
+    return {
+        "response_list": ResponseList([r.rsp._response for r in inputs]),
+        "py_result_list": [r.rsp._py_result for r in inputs],
+        "sampling_params_list": [r.sampling_params for r in inputs],
+        "postproc_params_list": [r.postproc_params for r in inputs],
+        "streaming_list": [r.streaming for r in inputs],
+    }
+
+
+def restore_postproc_inputs(inputs: dict) -> List[PostprocWorker.Input]:
+    from tensorrt_llm._torch.pyexecutor.llm_request import LlmResponse
+    return [
+        PostprocWorker.Input(LlmResponse(response, py_result), sampling_params,
+                             postproc_params, streaming)
+        for response, py_result, sampling_params, postproc_params, streaming in
+        zip(inputs["response_list"].responses, inputs["py_result_list"],
+            inputs["sampling_params_list"], inputs["postproc_params_list"],
+            inputs["streaming_list"])
+    ]
 
 
 @print_traceback_on_error

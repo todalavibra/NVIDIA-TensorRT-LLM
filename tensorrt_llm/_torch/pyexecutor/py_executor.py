@@ -3,7 +3,6 @@ import datetime
 import functools
 import gc
 import heapq
-import itertools
 import os
 import queue
 import threading
@@ -21,10 +20,12 @@ from tensorrt_llm._utils import (global_mpi_rank, is_trace_enabled, nvtx_range,
                                  trace_func)
 
 # isort: off
-from tensorrt_llm.bindings.executor import (
-    DisServingRequestStats, FinishReason, InflightBatchingStats, IterationStats,
-    KvCacheStats, RequestStage, RequestStats, RequestType, SpecDecodingStats,
-    StaticBatchingStats, deserialize_responses, serialize_responses)
+from tensorrt_llm.bindings.executor import (DisServingRequestStats,
+                                            FinishReason, InflightBatchingStats,
+                                            IterationStats, KvCacheStats,
+                                            RequestStage, RequestStats,
+                                            RequestType, SpecDecodingStats,
+                                            StaticBatchingStats)
 # isort: on
 
 from tensorrt_llm.bindings.internal.batch_manager import (LlmRequestType,
@@ -34,8 +35,9 @@ from tensorrt_llm.logger import logger
 from ..distributed import Distributed
 from .kv_cache_transceiver import KvCacheTransceiver
 from .llm_request import (ExecutorRequest, ExecutorResponse, LlmRequest,
-                          LlmRequestState, LlmResponse,
-                          executor_request_to_llm_request)
+                          LlmRequestState, executor_request_to_llm_request,
+                          make_llm_responses_serialize_friendly,
+                          restore_llm_responses_from_serialize_friendly_dict)
 from .model_engine import ModelEngine
 from .sampler import Sampler, SampleState, SampleStateTensors, TorchSampler
 from .scheduler import ScheduledRequests
@@ -1989,45 +1991,25 @@ class PyExecutor:
 
         logger.debug(
             f'before gather, rank = {self.dist.rank}, responses = {responses}')
-        if self.enable_attention_dp:
-            if self.dist.world_size == 1:
-                pass
-            elif not self.gather_all_responses:
-                response_list = ResponseList(
-                    [r._response for r in responses.values()])
-                py_result_list = PyResultsList(
-                    [r._py_result for r in responses.values()])
-                req_id_list = list(responses.keys())
-                packed_responses = PackedResponses(response_list,
-                                                   py_result_list, req_id_list)
-
-                responses_list = self.dist.tp_gather(packed_responses)
-
+        if self.enable_attention_dp and self.dist.world_size != 1:
+            if not self.gather_all_responses:
+                packed_responses = make_llm_responses_serialize_friendly(
+                    responses)
+                packed_responses = self.dist.tp_gather(packed_responses)
                 responses = {}
                 if self.dist.rank == 0:
-                    for res in responses_list:
-                        for response, py_result, req_id in itertools.zip_longest(
-                                res._response_list._responses,
-                                res._py_result_list._py_results,
-                                res._req_id_list):
-                            responses[req_id] = LlmResponse(response, py_result)
+                    for res in packed_responses:
+                        responses.update(
+                            restore_llm_responses_from_serialize_friendly_dict(
+                                res))
             else:
-                response_list = ResponseList(
-                    [r._response for r in responses.values()])
-                py_result_list = PyResultsList(
-                    [r._py_result for r in responses.values()])
-                req_id_list = list(responses.keys())
-                packed_responses = PackedResponses(response_list,
-                                                   py_result_list, req_id_list)
-
-                responses_list = self.dist.allgather(packed_responses)
-
+                packed_responses = make_llm_responses_serialize_friendly(
+                    responses)
+                packed_responses = self.dist.allgather(packed_responses)
                 responses = {}
-                for res in responses_list:
-                    for response, py_result, req_id in zip(
-                            res._response_list._responses,
-                            res._py_result_list._py_results, res._req_id_list):
-                        responses[req_id] = LlmResponse(response, py_result)
+                for res in packed_responses:
+                    responses.update(
+                        restore_llm_responses_from_serialize_friendly_dict(res))
         logger.debug(
             f'after gather, rank = {self.dist.rank}, responses = {responses}')
 
@@ -2174,41 +2156,3 @@ class PyExecutor:
         # getter is required, when not using TorchSampler.
         return not self.disable_overlap_scheduler and not isinstance(
             self.sampler, TorchSampler)
-
-
-class ResponseList:
-
-    def __init__(self, responses):
-        self._responses = responses
-
-    def __reduce__(self):
-        return (ResponseList.deserialize, (self.serialize(), ))
-
-    def serialize(self):
-        return serialize_responses(self._responses)
-
-    @staticmethod
-    def deserialize(s):
-        # convert string back to list
-        responses = deserialize_responses(s)
-        return ResponseList(responses)
-
-
-class PyResultsList:
-
-    def __init__(self, py_results):
-        self._py_results = py_results
-
-
-class PackedResponses:
-
-    def __init__(self, response_list, py_result_list, req_id_list):
-        self._response_list = response_list
-        self._py_result_list = py_result_list
-        self._req_id_list = req_id_list
-
-    def __getstate__(self):
-        return self._response_list, self._py_result_list, self._req_id_list
-
-    def __setstate__(self, state):
-        self._response_list, self._py_result_list, self._req_id_list = state
