@@ -617,15 +617,6 @@ def attention(
         # NOTE(tizheng): Does this introduce overhead?
         output_sf = torch.empty(())  # Create a placeholder, which is not used.
 
-    # if layer_idx <= 1 or layer_idx >= 32:
-    #     print("torch_custom_ops.py attention layer_idx", layer_idx, "out_dtype",
-    #           out_dtype)
-    #     print("q", q.shape, q)
-    #     print("k", k)
-    #     print("v", v)
-    #     print("spec_decoding_position_offsets", spec_decoding_position_offsets)
-    #     print("spec_decoding_packed_mask", spec_decoding_packed_mask)
-    #     print("spec_decoding_generation_lengths", spec_decoding_generation_lengths)
     # this function has maxed out number of arguments (64)
     # https://github.com/pytorch/pytorch/blob/a2b0b2698d5b953861b2e4f3cdee11136f07bd3b/aten/src/ATen/core/dispatch/DispatchKeyExtractor.h#L235
     torch.ops.trtllm.attention_inplace(
@@ -648,9 +639,6 @@ def attention(
         mla_context_kv_cache_block_offsets, attention_chunk_size, use_spec_dec,
         spec_decoding_position_offsets, spec_decoding_packed_mask,
         spec_decoding_generation_lengths)
-    # if layer_idx <= 1 or layer_idx >= 32:
-    #     print("torch_custom_ops.py attention layer_idx", layer_idx)
-    #     print("output_act", output_act.shape, output_act)
 
     return output_act, output_sf
 
