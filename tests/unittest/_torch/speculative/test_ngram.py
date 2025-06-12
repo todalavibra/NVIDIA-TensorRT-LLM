@@ -13,6 +13,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.llm_data import llm_models_root
 
 
+# TODO: add attn_backend="FLASHINFER"
 @pytest.mark.parametrize(
     "disable_overlap_scheduler,use_cuda_graph,attn_backend",
     [[True, False, "TRTLLM"], [False, False, "TRTLLM"], [True, True, "TRTLLM"],

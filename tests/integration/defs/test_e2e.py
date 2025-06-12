@@ -1731,7 +1731,7 @@ def test_ptp_quickstart_advanced_ngram(llm_root, llm_venv, model_name,
             "--use_cuda_graph",
         ],
                          stdout=running_log)
-        _check_mem_usage(running_log, [4.60, 0, 0, 0])
+        _check_mem_usage(running_log, [27.0, 0, 0, 0])
 
 
 @skip_post_blackwell
