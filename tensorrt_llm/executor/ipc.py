@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import os
+import pickle  # nosec B403
 import time
 import traceback
 from queue import Queue
@@ -114,21 +115,31 @@ class ZeroMqQueue:
         else:
             return False
 
-    def put(self, obj: Any):
+    def put(self, obj: Any, serialized: bool = False):
         self.setup_lazily()
-        with nvtx_range_debug("send", color="blue", category="IPC"):
-            data = serialization.dumps(obj)
-            if self.use_hmac_encryption:
-                # Send pickled data with HMAC appended
+        with nvtx_range_debug("serialization.dumps",
+                              color="blue",
+                              category="IPC"):
+            if not serialized:
+                data = serialization.dumps(obj,
+                                           protocol=pickle.HIGHEST_PROTOCOL)
+            else:
+                data = obj
+        if self.use_hmac_encryption:
+            # Send pickled data with HMAC appended
+            with nvtx_range_debug("_sign_data", color="blue", category="IPC"):
                 data = self._sign_data(data)
+        with nvtx_range_debug("send", color="blue", category="IPC"):
             self.socket.send(data)
 
     def put_noblock(self, obj: Any):
         self.setup_lazily()
         with nvtx_range_debug("send", color="blue", category="IPC"):
             data = serialization.dumps(obj)
-            if self.use_hmac_encryption:
+        if self.use_hmac_encryption:
+            with nvtx_range_debug("_sign_data", color="blue", category="IPC"):
                 data = self._sign_data(data)
+        with nvtx_range_debug("send(noblock)", color="blue", category="IPC"):
             self.socket.send(data, flags=zmq.NOBLOCK)
 
     async def put_async(self, obj: Any):

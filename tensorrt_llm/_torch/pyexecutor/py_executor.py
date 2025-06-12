@@ -18,12 +18,16 @@ import torch
 
 from tensorrt_llm._utils import (global_mpi_rank, is_trace_enabled, nvtx_range,
                                  trace_func)
+
+# isort: off
 from tensorrt_llm.bindings.executor import (DisServingRequestStats,
                                             FinishReason, InflightBatchingStats,
                                             IterationStats, KvCacheStats,
                                             RequestStage, RequestStats,
                                             RequestType, SpecDecodingStats,
                                             StaticBatchingStats)
+# isort: on
+
 from tensorrt_llm.bindings.internal.batch_manager import (LlmRequestType,
                                                           ReqIdsSet)
 from tensorrt_llm.logger import logger
@@ -31,7 +35,9 @@ from tensorrt_llm.logger import logger
 from ..distributed import Distributed
 from .kv_cache_transceiver import KvCacheTransceiver
 from .llm_request import (ExecutorRequest, ExecutorResponse, LlmRequest,
-                          LlmRequestState, executor_request_to_llm_request)
+                          LlmRequestState, executor_request_to_llm_request,
+                          make_llm_responses_serialize_friendly,
+                          restore_llm_responses_from_serialize_friendly_dict)
 from .model_engine import ModelEngine
 from .sampler import Sampler, SampleState, SampleStateTensors, TorchSampler
 from .scheduler import ScheduledRequests
@@ -1985,17 +1991,25 @@ class PyExecutor:
 
         logger.debug(
             f'before gather, rank = {self.dist.rank}, responses = {responses}')
-        if self.enable_attention_dp:
+        if self.enable_attention_dp and self.dist.world_size != 1:
             if not self.gather_all_responses:
-                responses_list = self.dist.tp_gather(responses)
+                packed_responses = make_llm_responses_serialize_friendly(
+                    responses)
+                packed_responses = self.dist.tp_gather(packed_responses)
+                responses = {}
+                if self.dist.rank == 0:
+                    for res in packed_responses:
+                        responses.update(
+                            restore_llm_responses_from_serialize_friendly_dict(
+                                res))
             else:
-                responses_list = self.dist.allgather(responses)
-            if self.dist.rank == 0 or self.gather_all_responses:
-                gather_responses = {}
-                if responses_list is not None:
-                    for resp in responses_list:
-                        gather_responses.update(resp)
-                    responses = gather_responses
+                packed_responses = make_llm_responses_serialize_friendly(
+                    responses)
+                packed_responses = self.dist.allgather(packed_responses)
+                responses = {}
+                for res in packed_responses:
+                    responses.update(
+                        restore_llm_responses_from_serialize_friendly_dict(res))
         logger.debug(
             f'after gather, rank = {self.dist.rank}, responses = {responses}')
 
@@ -2030,10 +2044,10 @@ class PyExecutor:
             f'------before _handle_responses, rank = {self.dist.rank}, output = {self.active_requests}'
         )
         for request in self.active_requests:
-            req_id = request.py_request_id
             # no responses for dummy request, and finish it
             if request.is_attention_dp_dummy:
                 requests_to_terminate.append(request)
+                self.active_requests.remove(request)
                 continue
 
             if request.is_generation_only_request:
@@ -2044,11 +2058,15 @@ class PyExecutor:
                         not self.disable_overlap_scheduler
                         and request.py_decoding_iter <= 1):
                     new_active_requests.append(request)
+                    self.active_requests.remove(request)
                     continue
 
             request.draft_tokens = request.py_draft_tokens
             request.decoding_iter = request.py_decoding_iter
-            response: Response = request.create_response(False, self.dist.rank)
+
+            response = request.create_response(False, self.dist.rank)
+
+            req_id = request.py_request_id
             request_done = False
             if response:
                 request_done = response.result.is_final
