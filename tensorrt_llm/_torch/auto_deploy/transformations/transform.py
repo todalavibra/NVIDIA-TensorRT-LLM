@@ -28,6 +28,7 @@ from .library import (
     match_grouped_attention,
     match_moe_pattern,
     match_repeat_kv,
+    match_rms_norm,
     match_rope_layout,
     match_rope_pattern,
     optimize_rope,
@@ -175,6 +176,9 @@ class InferenceOptimizer:
 
         # check if we can fuse collectives
         egm = fuse_collectives(egm)
+
+        # match rms norm pattern
+        egm = match_rms_norm(egm)
 
         # visualize the final graph
         if self.visualize:
