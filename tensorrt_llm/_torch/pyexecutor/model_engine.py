@@ -998,7 +998,7 @@ class PyTorchModelEngine(ModelEngine):
                     moe_max_num_tokens: Optional[int] = None,
                     moe_load_balancer: Optional[MoeLoadBalancerConfig] = None,
                     lora_config: Optional[LoraConfig] = None,
-                    **kwargs):
+                    **kwargs) -> DecoderModelForCausalLM:
         config = ModelConfig.from_pretrained(
             checkpoint_dir,
             trust_remote_code=True,
