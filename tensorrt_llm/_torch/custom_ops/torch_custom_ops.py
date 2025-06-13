@@ -41,6 +41,7 @@ class MoERunner(TunableRunner):
         cluster_rank: int,
         use_deepseek_fp8_block_scale: bool,
         use_w4a8_group_scaling: bool,
+        use_fused_finalize: bool
     ):
         self.x_dtype = x_dtype
         self.weight_dtype = weight_dtype
@@ -54,6 +55,7 @@ class MoERunner(TunableRunner):
         self.cluster_rank = cluster_rank
         self.use_deepseek_fp8_block_scale = use_deepseek_fp8_block_scale
         self.use_w4a8_group_scaling = use_w4a8_group_scaling
+        self.use_fused_finalize = use_fused_finalize
 
         instance_key = (x_dtype, weight_dtype, output_dtype,
                         use_deepseek_fp8_block_scale, use_w4a8_group_scaling)
@@ -62,7 +64,7 @@ class MoERunner(TunableRunner):
             MoERunner.runner_dict[
                 instance_key] = torch.classes.trtllm.FusedMoeRunner(
                     x_dtype, weight_dtype, output_dtype,
-                    use_deepseek_fp8_block_scale, use_w4a8_group_scaling)
+                    use_deepseek_fp8_block_scale, use_w4a8_group_scaling, use_fused_finalize)
         self.fused_moe_runner = MoERunner.runner_dict[instance_key]
 
     def get_valid_tactics(
@@ -145,6 +147,7 @@ def fused_moe(
     use_deepseek_fp8_block_scale: bool = False,
     use_w4a8_group_scaling: bool = False,
     min_latency_mode: bool = False,
+    use_fused_finalize: bool = True,
     tune_max_num_tokens: int = 8192,
 ) -> List[torch.Tensor]:
 
@@ -168,6 +171,7 @@ def fused_moe(
         cluster_rank=cluster_rank,
         use_deepseek_fp8_block_scale=use_deepseek_fp8_block_scale,
         use_w4a8_group_scaling=use_w4a8_group_scaling,
+        use_fused_finalize=use_fused_finalize,
     )
 
     _, gemm_tactic_1 = tuner.choose_one(
@@ -227,6 +231,7 @@ def _(
     use_deepseek_fp8_block_scale: bool = False,
     use_w4a8_group_scaling: bool = False,
     min_latency_mode: bool = False,
+    use_fused_finalize: bool = True,
     tune_max_num_tokens: int = 8192,
 ):
     seq_len = input.shape[0]

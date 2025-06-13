@@ -26,7 +26,7 @@ endif()
 
 execute_process(
   WORKING_DIRECTORY ${3RDPARTY_DIR}/cutlass/python/
-  COMMAND ${Python3_EXECUTABLE} setup_library.py develop --user
+  COMMAND ${Python3_EXECUTABLE} setup_library.py develop #--user
   RESULT_VARIABLE _CUTLASS_LIBRARY_SUCCESS)
 
 if(NOT _CUTLASS_LIBRARY_SUCCESS MATCHES 0)

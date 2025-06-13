@@ -191,6 +191,8 @@ class CutlassFusedMoE(MoE):
         # If True, the router weight will be multiplied on the input rather than at the end of FC2
         self.apply_router_weight_on_input = apply_router_weight_on_input
 
+        self.use_fused_finalize = not model_config.moe_disable_finalize_fusion
+
         self._weights_created = False
         if not model_config.skip_create_weights_in_init:
             self.create_weights()
@@ -436,6 +438,7 @@ class CutlassFusedMoE(MoE):
             use_w4a8_group_scaling=use_w4a8_group_scaling,
             min_latency_mode=cutlass_min_latency_mode,
             tune_max_num_tokens=self.tune_max_num_tokens,
+            use_fused_finalize=self.use_fused_finalize,
         )
 
         if self.layer_load_balancer and not self.layer_load_balancer.is_static_routing(

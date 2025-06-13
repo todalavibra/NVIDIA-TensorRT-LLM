@@ -447,13 +447,13 @@ public:
     virtual size_t getGemmWorkspaceSize(int num_experts_per_node) const = 0;
 
     bool is_profiler = false;
-    bool use_deterministic_hopper_reduce_ = false;
+    bool use_fused_finalize_ = true;
 };
 
 // Assumes inputs activations are row major. Weights need to be preprocessed by th_op/weight_quantize.cc .
 // Nested in a class to avoid multiple calls to cudaGetDeviceProperties as this call can be expensive.
 // Avoid making several duplicates of this class.
-template <typename T,                   /*The type used for activations*/
+template <typename T,                   /* The type used for activations */
     typename WeightType,                /* The type for the MoE weights */
     typename OutputType = T,            /* The type for the MoE final output */
     typename InputType = T,             /* The type for the MoE input */
@@ -716,8 +716,8 @@ private:
 
     bool mayHaveFinalizeFused() const
     {
-        return moe_gemm_runner_.supportsTmaWarpSpecialized() && moe_gemm_runner_.getSM() == 90
-            && !use_deterministic_hopper_reduce_ && !use_w4afp8;
+        return moe_gemm_runner_.supportsTmaWarpSpecialized() && moe_gemm_runner_.getSM() >= 90 && use_fused_finalize_
+            && !use_w4afp8;
     }
 
     // TODO: This should eventually take the quant params to give more flexibility
