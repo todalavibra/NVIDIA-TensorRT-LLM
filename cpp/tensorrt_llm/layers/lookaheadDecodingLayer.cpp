@@ -427,14 +427,6 @@ void LookaheadDecodingLayer<T>::print(char const* functionName, int const lineNu
     }
 
     auto const cpuAlgoValue = mCpuAlgo.value();
-
-    TLLM_LOG_TRACE("mPrompts:");
-    for (long unsigned int i = 0; i < cpuAlgoValue.mPrompts.size(); ++i)
-    {
-        TLLM_LOG_TRACE("i=%d", (int) i);
-        PRINT_TOKEN(cpuAlgoValue.mPrompts[i]);
-    }
-
     PRINT_TOKEN(cpuAlgoValue.mBatchSlots);
     PRINT_TOKEN(cpuAlgoValue.mTargetTokens);
     PRINT_TOKEN(cpuAlgoValue.mTokensPerStep);
@@ -455,9 +447,17 @@ void LookaheadDecodingLayer<T>::print(char const* functionName, int const lineNu
     PRINT_TOKEN(cpuAlgoValue.mPositionOffsets);
     PRINT_TOKEN(cpuAlgoValue.mPositionIds);
 
+    TLLM_LOG_TRACE("mPrompts: (size=%lu)", cpuAlgoValue.mPrompts.size());
+    for (long unsigned int i = 0; i < cpuAlgoValue.mPrompts.size(); ++i)
+    {
+        TLLM_LOG_TRACE("i=%d", (int) i);
+        PRINT_TOKEN(cpuAlgoValue.mPrompts[i]);
+    }
+
+    TLLM_LOG_TRACE("mAlgos: (size=%lu)", cpuAlgoValue.mAlgos.size());
     for (long unsigned int i = 0; i < cpuAlgoValue.mAlgos.size(); ++i)
     {
-        TLLM_LOG_TRACE("mAlgos[%d]:", (int) i);
+        TLLM_LOG_TRACE("i=%d", (int) i);
         cpuAlgoValue.mAlgos[i].print(functionName, lineNumber);
     }
 
