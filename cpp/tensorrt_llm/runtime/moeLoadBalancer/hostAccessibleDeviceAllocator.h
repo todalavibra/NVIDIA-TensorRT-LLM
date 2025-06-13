@@ -28,6 +28,11 @@ namespace tensorrt_llm::runtime
 
 class MoeLoadBalancer;
 
+namespace unit_tests
+{
+class HostAccessibleDeviceAllocatorTest;
+}
+
 class HostAccessibleDeviceAllocator
 {
 public:
@@ -103,6 +108,7 @@ private:
     void shutdown();
 
     friend class tensorrt_llm::runtime::MoeLoadBalancer;
+    friend class tensorrt_llm::runtime::unit_tests::HostAccessibleDeviceAllocatorTest;
 
     /**
      * @brief Increment the reference count of the load balancer.
