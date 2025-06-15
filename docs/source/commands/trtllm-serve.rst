@@ -104,26 +104,6 @@ Another example uses ``curl``:
     :language: bash
     :linenos:
 
-Benchmark
----------
-
-You can use any benchmark clients compatible with OpenAI API to test serving performance of ``trtllm_serve``, we recommend ``genai-perf`` and here is a benchmarking recipe.
-
-First, install ``genai-perf`` with ``pip``:
-
-.. code-block:: bash
-
-   pip install genai-perf
-
-Then, :ref:`start a server<Starting a Server>` with ``trtllm-serve`` and ``TinyLlama-1.1B-Chat-v1.0``.
-
-Finally, test performance with the following command:
-
-.. literalinclude:: ../../../examples/serve/genai_perf_client.sh
-    :language: bash
-    :linenos:
-
-Refer to `README <https://github.com/triton-inference-server/perf_analyzer/blob/main/genai-perf/README.md>`_ of ``genai-perf`` for more guidance.
 
 Multi-node Serving with Slurm
 -----------------------------
