@@ -314,7 +314,8 @@ def latency_command(
             logger.info("Running warmup.")
             asyncio.run(
                 async_benchmark(llm,
-                                sampling_params, post_proc_params, 
+                                sampling_params,
+                                post_proc_params,
                                 warmup_dataset,
                                 False,
                                 concurrency,
@@ -328,7 +329,8 @@ def latency_command(
         with iteration_writer.capture():
             statistics = asyncio.run(
                 async_benchmark(llm,
-                                sampling_params, post_proc_params,
+                                sampling_params,
+                                post_proc_params,
                                 requests,
                                 True,
                                 concurrency,

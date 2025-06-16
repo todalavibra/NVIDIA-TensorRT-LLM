@@ -7,7 +7,6 @@ from pathlib import Path
 import click
 from click_option_group import (MutuallyExclusiveOptionGroup, OptionGroup,
                                 optgroup)
-from huggingface_hub import snapshot_download
 
 from tensorrt_llm.bench.benchmark.utils.asynchronous import async_benchmark
 from tensorrt_llm.bench.benchmark.utils.processes import IterationWriter
