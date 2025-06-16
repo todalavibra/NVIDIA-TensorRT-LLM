@@ -8,9 +8,11 @@ from typing import Optional
 import torch
 
 import tensorrt_llm
+from tensorrt_llm._torch.pyexecutor.resource_manager import ResourceManagerType
 from tensorrt_llm._utils import get_sm_version
 from tensorrt_llm.bindings.executor import ContextChunkingPolicy, ExecutorConfig
 from tensorrt_llm.bindings.internal.batch_manager import ContextChunkingConfig
+from tensorrt_llm.llmapi.llm_args import UserProvidedDecodingConfig
 from tensorrt_llm.logger import logger
 from tensorrt_llm.lora_manager import LoraConfig
 from tensorrt_llm.mapping import Mapping
@@ -23,7 +25,7 @@ from ._util import (KvCacheCreator, create_py_executor_instance,
                     instantiate_sampler, is_mla)
 from .config import PyTorchConfig
 from .config_utils import is_mla
-from .model_engine import DRAFT_KV_CACHE_MANAGER_KEY, PyTorchModelEngine
+from .model_engine import PyTorchModelEngine
 from .py_executor import PyExecutor
 
 
@@ -193,13 +195,13 @@ def create_py_executor(
     has_draft_model_engine = False
     if spec_config is not None:
         has_draft_model_engine = spec_config.spec_dec_mode.has_draft_model()
-    has_ngram_drafter = isinstance(spec_config, NGramConfig)
+    has_speculative_draft_tokens = has_draft_model_engine or isinstance(
+        spec_config, (NGramConfig, UserProvidedDecodingConfig))
 
     attn_runtime_features = AttentionRuntimeFeatures(
         chunked_prefill=executor_config.enable_chunked_context,
         cache_reuse=executor_config.kv_cache_config.enable_block_reuse,
-        has_speculative_draft_tokens=has_draft_model_engine
-        or has_ngram_drafter,
+        has_speculative_draft_tokens=has_speculative_draft_tokens,
     )
     logger.info("ATTENTION RUNTIME FEATURES: ", attn_runtime_features)
 
@@ -242,7 +244,7 @@ def create_py_executor(
                 spec_config=draft_spec_config,
                 is_draft_model=True,
             )
-            draft_model_engine.kv_cache_manager_key = DRAFT_KV_CACHE_MANAGER_KEY
+            draft_model_engine.kv_cache_manager_key = ResourceManagerType.DRAFT_KV_CACHE_MANAGER
             draft_model_engine.load_weights_from_target_model(
                 model_engine.model)
     else:
@@ -325,10 +327,20 @@ def create_py_executor(
 
     # resource managers for speculative decoding
     if spec_config is not None:
-        spec_resource_manager = get_spec_resource_manager(
-            spec_config, model_engine, draft_model_engine)
+        if isinstance(spec_config, UserProvidedDecodingConfig):
+            try:
+                spec_resource_manager = pytorch_backend_config.extra_resource_managers.pop(
+                    ResourceManagerType.SPEC_RESOURCE_MANAGER)
+            except KeyError:
+                raise RuntimeError(
+                    "With UserProvidedDecodingConfig provided, expected 'ResourceManagerType.SPEC_RESOURCE_MANAGER' in extra_resource_managers, but not found"
+                )
+        else:
+            spec_resource_manager = get_spec_resource_manager(
+                spec_config, model_engine, draft_model_engine)
         if spec_resource_manager is not None:
-            resources["spec_resource_manager"] = spec_resource_manager
+            resources[ResourceManagerType.
+                      SPEC_RESOURCE_MANAGER] = spec_resource_manager
 
     with mem_monitor.observe_creation_stage(
             _ExecutorCreationStage.INIT_EXTRA_RESOURCES
