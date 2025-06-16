@@ -328,8 +328,13 @@ def create_py_executor(
     # resource managers for speculative decoding
     if spec_config is not None:
         if isinstance(spec_config, UserProvidedDecodingConfig):
-            spec_resource_manager = pytorch_backend_config.extra_resource_managers.pop(
-                "spec_resource_manager")
+            try:
+                spec_resource_manager = pytorch_backend_config.extra_resource_managers.pop(
+                    ResourceManagerType.SPEC_RESOURCE_MANAGER)
+            except KeyError:
+                raise RuntimeError(
+                    "With UserProvidedDecodingConfig provided, expected 'ResourceManagerType.SPEC_RESOURCE_MANAGER' in extra_resource_managers, but not found"
+                )
         else:
             spec_resource_manager = get_spec_resource_manager(
                 spec_config, model_engine, draft_model_engine)
