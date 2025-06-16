@@ -49,7 +49,7 @@ if __name__ == '__main__':
                         help='Latest waive list')
     parser.add_argument('--diff', required=True, help='Diff of the waive list')
     parser.add_argument('--output-file', required=True, help='Output file')
-
+    args = parser.parse_args(sys.argv[1:])
     cur_list = parse_waive_txt(args.cur_waive_list)
     main_list = parse_waive_txt(args.latest_waive_list)
     remove_lines = parse_diff(args.diff)
