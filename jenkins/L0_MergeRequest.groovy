@@ -334,6 +334,7 @@ def setupPipelineEnvironment(pipeline, testFilter, globalVars)
         testFilter[(MULTI_GPU_FILE_CHANGED)] = getMultiGpuFileChanged(pipeline, testFilter, globalVars)
         testFilter[(ONLY_PYTORCH_FILE_CHANGED)] = getOnlyPytorchFileChanged(pipeline, testFilter, globalVars)
         testFilter[(AUTO_TRIGGER_TAG_LIST)] = getAutoTriggerTagList(pipeline, testFilter, globalVars)
+        mergeWaiveList(pipeline)
     })
 }
 
@@ -1203,7 +1204,6 @@ pipeline {
             {
                 script {
                     setupPipelineEnvironment(this, testFilter, globalVars)
-                    mergeWaiveList(this)
                     println globalVars
                     globalVars[ACTION_INFO] = trtllm_utils.setupPipelineDescription(this, globalVars[ACTION_INFO])
                     echo "enableFailFast is: ${enableFailFast}"
