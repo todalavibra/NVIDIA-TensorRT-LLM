@@ -283,8 +283,6 @@ def latency_command(
     kwargs['backend'] = backend
 
     try:
-
-        llm = LLM(**kwargs)
         logger.info("Setting up latency benchmark.")
 
         if "pytorch_backend_config" in kwargs and iteration_log is not None:
