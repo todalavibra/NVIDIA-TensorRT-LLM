@@ -392,10 +392,17 @@ def getMergeRequestOneFileChangesGithub(pipeline, githubPrApiUrl, filePath) {
             )
             echo "rawDataJson: ${rawDataJson}"
             def rawDataList = readJSON text: rawDataJson, returnPojo: true
+            def found = false
             rawDataList.each { rawData ->
-                if (rawData.get("filename") == filePath || rawData.get("previous_filename") == filePath) {
-                    diff = rawData.get("diff")
-                    break
+                try {
+                    if (rawData.get("filename") == filePath || rawData.get("previous_filename") == filePath) {
+                        diff = rawData.get("patch")
+                        echo "diff: ${diff}"
+                        found = true
+                        return true  // This will break the each loop
+                    }
+                } catch (Exception e) {
+                    echo "Error processing rawData: ${e.message}"
                 }
             }
             if (!rawDataList || diff != "") { break }
@@ -437,18 +444,15 @@ def mergeWaiveList(pipeline, globalVars)
         return
     }
 
-    def diff = getMergeRequestOneFileChanges(pipeline, globalVars, "tests/integration/test_lists/waives.txt")
-    echo "diff: ${diff}"
-    // if (diff == "") {
-    //     return
-    // }
-
     trtllm_utils.llmExecStepWithRetry(pipeline, script: "wget https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/${env.gitlabMergeRequestLastCommit}/tests/integration/test_lists/waives.txt -O cur_waives.txt")
     sh "cat cur_waives.txt"
 
     branch = "main"
     trtllm_utils.llmExecStepWithRetry(pipeline, script: "wget https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/refs/heads/${branch}/tests/integration/test_lists/waives.txt -O latest_waives.txt")
     sh "cat latest_waives.txt"
+
+    def diff = getMergeRequestOneFileChanges(pipeline, globalVars, "tests/integration/test_lists/waives.txt")
+    echo "diff: ${diff}"
 
     trtllm_utils.llmExecStepWithRetry(pipeline, script: "wget https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/${env.gitlabMergeRequestLastCommit}/jenkins/mergeWaiveList.py")
     sh """

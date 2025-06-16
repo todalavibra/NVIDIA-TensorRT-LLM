@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 
 def parse_diff(diff):
