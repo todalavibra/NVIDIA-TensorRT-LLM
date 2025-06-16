@@ -334,7 +334,7 @@ def setupPipelineEnvironment(pipeline, testFilter, globalVars)
         testFilter[(MULTI_GPU_FILE_CHANGED)] = getMultiGpuFileChanged(pipeline, testFilter, globalVars)
         testFilter[(ONLY_PYTORCH_FILE_CHANGED)] = getOnlyPytorchFileChanged(pipeline, testFilter, globalVars)
         testFilter[(AUTO_TRIGGER_TAG_LIST)] = getAutoTriggerTagList(pipeline, testFilter, globalVars)
-        mergeWaiveList(pipeline)
+        mergeWaiveList(pipeline, globalVars)
     })
 }
 
@@ -372,7 +372,65 @@ def getMergeRequestOneFileChangesGitlab(pipeline, filePath) {
     }
 }
 
-def mergeWaiveList(pipeline)
+def getMergeRequestOneFileChangesGithub(pipeline, githubPrApiUrl, filePath) {
+    def diff = ""
+    def pageId = 0
+    withCredentials([
+        string(
+            credentialsId: 'github-token-trtllm-ci',
+            variable: 'GITHUB_API_TOKEN'
+        ),
+    ]) {
+        while(true) {
+            pageId += 1
+            def rawDataJson = pipeline.sh(
+                script: """
+                    curl --header "Authorization: Bearer $GITHUB_API_TOKEN" \
+                         --url "${githubPrApiUrl}/files?page=${pageId}&per_page=20"
+                """,
+                returnStdout: true
+            )
+            echo "rawDataJson: ${rawDataJson}"
+            def rawDataList = readJSON text: rawDataJson, returnPojo: true
+            rawDataList.each { rawData ->
+                if (rawData.get("new_path") == filePath || rawData.get("old_path") == filePath) {
+                    diff = rawData.get("diff")
+                    break
+                }
+            }
+            if (!rawDataList || diff != "") { break }
+        }
+    }
+    pipeline.echo("The change of ${filePath} is: ${diff}")
+    return diff
+}
+
+def getMergeRequestOneFileChanges(pipeline, globalVars, filePath) {
+    def isOfficialPostMergeJob = (env.JOB_NAME ==~ /.*PostMerge.*/)
+    if (env.alternativeTRT || isOfficialPostMergeJob) {
+        pipeline.echo("Force set waive list diff to empty.")
+        return ""
+    }
+
+    def githubPrApiUrl = globalVars[GITHUB_PR_API_URL]
+    def diff = ""
+
+    try {
+        if (githubPrApiUrl != null) {
+            diff = getMergeRequestOneFileChangesGithub(pipeline, githubPrApiUrl, filePath)
+        } else {
+            diff = getMergeRequestOneFileChangesGitlab(pipeline, filePath)
+        }
+        return diff
+    } catch (InterruptedException e) {
+        throw e
+    } catch (Exception e) {
+        pipeline.echo("Get merge request one changed file diff failed. Error: ${e.toString()}")
+        return ""
+    }
+}
+
+def mergeWaiveList(pipeline, globalVars)
 {
     def isOfficialPostMergeJob = (env.JOB_NAME ==~ /.*PostMerge.*/)
     if (env.alternativeTRT || isOfficialPostMergeJob) {
@@ -386,7 +444,7 @@ def mergeWaiveList(pipeline)
     trtllm_utils.llmExecStepWithRetry(pipeline, script: "wget https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/refs/heads/${branch}/tests/integration/test_lists/waives.txt -O latest_waives.txt")
     sh "cat latest_waives.txt"
 
-    def diff = getMergeRequestOneFileChangesGitlab(pipeline, "tests/integration/test_lists/waives.txt")
+    def diff = getMergeRequestOneFileChanges(pipeline, globalVars, "tests/integration/test_lists/waives.txt")
     echo "diff: ${diff}"
 
     trtllm_utils.llmExecStepWithRetry(pipeline, script: "wget https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/${env.gitlabMergeRequestLastCommit}/jenkins/mergeWaiveList.py")
