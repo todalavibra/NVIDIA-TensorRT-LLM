@@ -397,6 +397,10 @@ def mergeWaiveList(pipeline)
         --diff=${diff} \
         --output-file=waives.txt
     """
+    trtllm_utils.uploadArtifacts("cur_waives.txt", "${UPLOAD_PATH}/waive_list/")
+    trtllm_utils.uploadArtifacts("latest_waives.txt", "${UPLOAD_PATH}/waive_list/")
+    trtllm_utils.uploadArtifacts("waives.txt", "${UPLOAD_PATH}/waive_list/")
+    echo "Waive list: https://urm.nvidia.com/artifactory/${UPLOAD_PATH}/waive_list/"
 }
 
 def launchReleaseCheck(pipeline)
