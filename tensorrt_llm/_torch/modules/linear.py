@@ -845,8 +845,7 @@ class W4A16_AWQ_LinearMethod(LinearMethodBase):
 
         weight_scale = load_weight_shard(weights[0]['weight_scale'],
                                          module.tp_size, module.tp_rank,
-                                         module.tp_mode,
-                                         device).to(torch.float16)
+                                         module.tp_mode, device)
 
         copy_weight(module.pre_quant_scale, pre_quant_scale)
         copy_weight(module.weight_scale, weight_scale)
@@ -866,7 +865,7 @@ class W4A16_AWQ_LinearMethod(LinearMethodBase):
         weight_scales = self.load_weight_scales(weights)
 
         # Create concatenated weight scale tensor
-        cat_weight_scale = torch.cat(weight_scales, dim=0).to(torch.float16)
+        cat_weight_scale = torch.cat(weight_scales, dim=0)
         copy_weight(module.weight_scale, cat_weight_scale)
 
     def load_weights_fused_gate_up_linear(self, module: Linear,
@@ -885,11 +884,10 @@ class W4A16_AWQ_LinearMethod(LinearMethodBase):
         left_scale = load_weight_shard(weights[0]['weight_scale'],
                                        module.tp_size, module.tp_rank,
                                        module.tp_mode, device).contiguous()
-        right_scale = load_weight_shard(weights[0]['weight_scale'],
+        right_scale = load_weight_shard(weights[1]['weight_scale'],
                                         module.tp_size, module.tp_rank,
                                         module.tp_mode, device).contiguous()
-        fused_scale = torch.cat([left_scale, right_scale],
-                                dim=0).to(torch.float16)
+        fused_scale = torch.cat([left_scale, right_scale], dim=0)
         copy_weight(module.weight_scale, fused_scale)
 
 
