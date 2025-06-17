@@ -459,7 +459,7 @@ def mergeWaiveList(pipeline, globalVars)
         python3 mergeWaiveList.py \
         --cur-waive-list=cur_waives.txt \
         --latest-waive-list=latest_waives.txt \
-        --diff=${diff} \
+        --diff='${diff}' \
         --output-file=waives.txt
     """
     trtllm_utils.uploadArtifacts("cur_waives.txt", "${UPLOAD_PATH}/waive_list/")
