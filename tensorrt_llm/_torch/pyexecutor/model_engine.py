@@ -605,7 +605,6 @@ class PyTorchModelEngine(ModelEngine):
                     result.context_requests = requests
             else:
                 result = None
-
             return result
 
         def get_autotune_warmup_request():
