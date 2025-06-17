@@ -24,8 +24,9 @@ from .llm_request import ExecutorResponse
 from .model_engine import (DRAFT_KV_CACHE_MANAGER_KEY, KV_CACHE_MANAGER_KEY,
                            PyTorchModelEngine)
 from .py_executor import PyExecutor
-from .resource_manager import (KVCacheManager, MambaHybridCacheManager,
-                               PeftCacheManager, ResourceManager)
+from .resource_manager import (KvCacheConfigCpp, KVCacheManager,
+                               MambaHybridCacheManager, PeftCacheManager,
+                               ResourceManager)
 from .sampler import (EarlyStopSampler, TorchSampler, TorchStarAttentionSampler,
                       TRTLLMSampler)
 from .scheduler import (BindCapacityScheduler, BindMicroBatchScheduler,
@@ -335,8 +336,16 @@ class KvCacheCreator:
                 spec_config=spec_config,
             )
         else:
+            # NOTE: this is a workaround for VSWA to switch to calculate_max_num_blocks_from_cpp in KVCahceManager
+            is_vswa = executor_config.kv_cache_config.max_attention_window is not None and len(
+                set(executor_config.kv_cache_config.max_attention_window)) > 1
+            binding_model_config = model_engine.model.model_config.get_bindings_model_config(
+                tokens_per_block=executor_config.tokens_per_block
+            ) if is_vswa else None
+
             kv_cache_manager = KVCacheManager(
-                executor_config.kv_cache_config,
+                # NOTE: from tensorrt_llm.bindings.executor.KvCacheConfig to tensorrt_llm.bindings.KvCacheConfig
+                KvCacheConfigCpp(executor_config.kv_cache_config),
                 tensorrt_llm.bindings.internal.batch_manager.CacheType.SELF,
                 num_layers=num_hidden_layers,
                 num_kv_heads=num_key_value_heads,
@@ -347,7 +356,8 @@ class KvCacheCreator:
                 mapping=mapping,
                 dtype=kv_cache_dtype,
                 spec_config=spec_config,
-            )
+                max_num_tokens=executor_config.max_num_tokens,
+                model_config=binding_model_config)
         # KVCacheManager (Non-draft) modifies the max_seq_len field, update it to executor_config
         if model_engine.kv_cache_manager_key == KV_CACHE_MANAGER_KEY:
             executor_config.max_seq_len = kv_cache_manager.max_seq_len
