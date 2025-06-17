@@ -1,13 +1,17 @@
+import torch
+
 from .draft_target import DraftTargetSpecMetadata
 from .eagle3 import (Eagle3OneModelDecoder, Eagle3OneModelSpecMetadata,
                      Eagle3OneModelWorker, Eagle3ResourceManager, Eagle3Sampler,
                      Eagle3SpecMetadata)
+from .interface import SpeculativeDecodingMode
 from .mtp import (MTPEagleWorker, MTPHiddenStatesManager, MTPSampler,
                   MTPSpecMetadata, MTPWorker)
 from .ngram import NGramPoolManager
 
 
 def get_spec_metadata(spec_config,
+                      model_config,
                       max_num_requests,
                       max_num_tokens,
                       spec_resource_manager=None,
@@ -20,13 +24,13 @@ def get_spec_metadata(spec_config,
             max_num_requests=max_num_requests,
             mtp_hidden_states_manager=spec_resource_manager)
     elif spec_config.spec_dec_mode.is_eagle3():
-        return Eagle3SpecMetadata(max_draft_tokens=spec_config.max_draft_tokens,
+        return Eagle3SpecMetadata(max_draft_tokens=spec_config.max_draft_len,
                                   spec_dec_mode=spec_config.spec_dec_mode,
                                   max_num_requests=max_num_requests,
-                                  num_layers=spec_config.num_layers,
-                                  hidden_size=spec_config.hidden_size,
+                                  num_layers=model_config.num_hidden_layers,
+                                  hidden_size=model_config.hidden_size,
                                   max_num_tokens=max_num_tokens,
-                                  dtype=spec_config.dtype,
+                                  dtype=model_config.torch_dtype,
                                   is_draft_model=is_draft_model,
                                   eagle3_resource_manager=spec_resource_manager)
     elif spec_config.spec_dec_mode.is_eagle3_one_model():
@@ -106,3 +110,26 @@ def get_spec_worker(spec_config, mapping):
         return Eagle3OneModelWorker(spec_config, mapping)
     else:
         return None
+
+
+def get_draft_model_prompt(spec_dec_mode: SpeculativeDecodingMode,
+                           input_tokens: torch.Tensor) -> torch.Tensor:
+    """
+    Can be used to modify prompts for speculative algorithms that need to update tokens
+    before drafting.
+    """
+    if spec_dec_mode.is_eagle3():
+        # EAGLE3 always throws away the first token when processing draft inputs
+        return input_tokens[1:]
+    return input_tokens
+
+
+def get_num_extra_kv_tokens(spec_config):
+    """
+    Implementation detail for one model implementations of speculative decoding. Extra
+    KV cache tokens are required.
+    """
+    if spec_config.spec_dec_mode.is_eagle3_one_model(
+    ) or spec_config.spec_dec_mode.is_mtp():
+        return spec_config.max_draft_len - 1
+    return 0

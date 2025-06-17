@@ -17,6 +17,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import torch
 
 from tensorrt_llm._torch.pyexecutor.resource_manager import ResourceManagerType
+from tensorrt_llm._torch.speculative.utils import get_draft_model_prompt
 from tensorrt_llm._utils import (customized_gc_thresholds, global_mpi_rank,
                                  is_trace_enabled, nvtx_range, trace_func)
 from tensorrt_llm.bindings.executor import (DisServingRequestStats,
@@ -975,7 +976,7 @@ class PyExecutor:
                 if req.state != LlmRequestState.GENERATION_IN_PROGRESS:
                     continue
                 req.py_last_draft_tokens = req.py_draft_tokens
-                max_draft_len = self.model_engine.spec_config.max_draft_tokens
+                max_draft_len = self.model_engine.spec_config.max_draft_len
 
                 if max_draft_len > 0:
                     req.py_draft_tokens = [0] * max_draft_len
@@ -1781,9 +1782,10 @@ class PyExecutor:
                 num_rejected_tokens = num_draft_tokens - num_accepted_tokens
                 assert num_rejected_tokens >= 0
 
-                spec_config = self.model_engine.spec_config
+                spec_mode = self.model_engine.spec_config.spec_dec_mode
                 beam_idx = 0
-                input_tokens = spec_config.get_draft_model_prompt(
+                input_tokens = get_draft_model_prompt(
+                    spec_mode,
                     request.get_tokens()[beam_idx])
 
                 if request.max_beam_num_tokens - 1 == request.py_prompt_len:

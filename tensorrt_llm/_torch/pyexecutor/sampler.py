@@ -192,6 +192,8 @@ class TorchSampler(Sampler):
     def __init__(self, max_seq_len: int, mixed_sampler: bool = False):
         self.max_seq_len = max_seq_len
         self.mixed_sampler = mixed_sampler
+        self.na = 0
+        self.nd = 0
 
     def _meet_max_token_stop_criteria(self, request: LlmRequest,
                                       num_tokens: int):
@@ -315,10 +317,12 @@ class TorchSampler(Sampler):
                 # token exactly.
                 num_accepted = 0
                 new_tokens = [new_token]
+                self.nd += len(request.py_draft_tokens)
                 for draft_token in request.py_draft_tokens:
                     if draft_token != new_token:
                         # Reject.
                         break
+                    self.na += 1
                     num_accepted += 1
                     new_token = new_tokens_list[token_idx + num_accepted]
                     num_tokens = request.add_new_token(new_token, beam_idx)
@@ -327,6 +331,7 @@ class TorchSampler(Sampler):
                     if self._handle_stop_criteria(request, new_token,
                                                   num_tokens, beam_idx):
                         break
+                print(self.na / self.nd)
                 handle_logits(request, new_tokens, num_accepted)
                 request.py_decoding_iter += 1
                 request.py_num_accepted_draft_tokens = num_accepted

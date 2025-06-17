@@ -18,6 +18,7 @@ from tensorrt_llm.mapping import Mapping
 
 from ..model_config import ModelConfig
 from ..speculative import get_spec_decoder
+from ..speculative.utils import get_num_extra_kv_tokens
 from .config_utils import is_mla, is_nemotron_hybrid
 from .kv_cache_transceiver import AttentionTypeCpp, create_kv_cache_transceiver
 from .llm_request import ExecutorResponse
@@ -154,8 +155,8 @@ class KvCacheCreator:
         num_extra_tokens_per_seq = 1  # account for generated tokens
         spec_cfg = executor_config.speculative_config
         if spec_cfg is not None:
-            num_extra_tokens_per_seq += spec_cfg.max_draft_tokens
-            num_extra_tokens_per_seq += spec_cfg.num_extra_kv_tokens
+            num_extra_tokens_per_seq += spec_cfg.max_draft_len
+            num_extra_tokens_per_seq += get_num_extra_kv_tokens(spec_cfg)
         for req in self._dummy_reqs:
             num_req_tokens = len(req.input_token_ids) + num_extra_tokens_per_seq
             # Requests cannot share KV cache blocks. Round up to nearest integer multiple of block size.
@@ -509,7 +510,7 @@ def create_py_executor_instance(
         disable_overlap_scheduler=pytorch_backend_config.
         disable_overlap_scheduler,
         max_batch_size=executor_config.max_batch_size,
-        max_draft_tokens=spec_config.max_draft_tokens
+        max_draft_tokens=spec_config.max_draft_len
         if spec_config is not None else 0,
         kv_cache_transceiver=kv_cache_transceiver,
         draft_model_engine=draft_model_engine,
