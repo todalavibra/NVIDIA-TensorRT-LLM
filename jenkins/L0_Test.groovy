@@ -1543,6 +1543,7 @@ def launchTestJobs(pipeline, testFilter, dockerNode=null)
         "RTX5090-PyTorch-1": ["rtx-5090", "l0_gb202", 1, 1],
         // Currently post-merge test stages only run tests with "stage: post_merge" mako
         // in the test-db. This behavior may change in the future.
+        "A10-PyTorch-[Post-Merge]-1": ["a10", "l0_a10", 1, 1],
         "A10-TensorRT-[Post-Merge]-1": ["a10", "l0_a10", 1, 8],
         "A10-TensorRT-[Post-Merge]-2": ["a10", "l0_a10", 2, 8],
         "A10-TensorRT-[Post-Merge]-3": ["a10", "l0_a10", 3, 8],
