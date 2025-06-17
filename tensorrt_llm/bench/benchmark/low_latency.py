@@ -9,6 +9,7 @@ import click
 import yaml
 from click_option_group import (MutuallyExclusiveOptionGroup, OptionGroup,
                                 optgroup)
+from huggingface_hub import snapshot_download
 
 from tensorrt_llm._torch.llm import LLM as PyTorchLLM
 from tensorrt_llm.bench.benchmark.utils.asynchronous import async_benchmark
@@ -227,6 +228,9 @@ def latency_command(
     kwargs = {}
     if backend and backend.lower() in ALL_SUPPORTED_BACKENDS and backend.lower(
     ) != "cpp":
+        if checkpoint_path is None:
+            snapshot_download(model)
+
         exec_settings = get_settings(params, metadata, bench_env.model,
                                      bench_env.checkpoint_path)
         kwargs_max_sql = max_seq_len or metadata.max_sequence_length
