@@ -113,14 +113,6 @@ class SpecConfig:
     def update_from_model_config(self, model_config: TConfig):
         pass
 
-    def get_draft_model_prompt(self,
-                               input_tokens: torch.Tensor) -> torch.Tensor:
-        """
-        Override for spec dec modes that need to preprocess prompt
-        tokens before passing them to the draft model.
-        """
-        return input_tokens
-
 
 @dataclass
 class SpecMetadata:

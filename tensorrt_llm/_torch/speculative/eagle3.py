@@ -41,13 +41,6 @@ class Eagle3Config(SpecConfig):
         self.hidden_size = model_config.hidden_size
         self.dtype = model_config.torch_dtype
 
-    def get_draft_model_prompt(self,
-                               input_tokens: torch.Tensor) -> torch.Tensor:
-        """
-        Eagle3 always throws away the first token when processing draft inputs
-        """
-        return input_tokens[1:]
-
 
 class Eagle3ResourceManager(BaseResourceManager):
     """
@@ -60,7 +53,7 @@ class Eagle3ResourceManager(BaseResourceManager):
                  hidden_size: int, max_num_requests: int, max_seq_len: int,
                  max_num_tokens: int):
         self.dtype = dtype
-        self.max_draft_tokens = config.max_draft_tokens
+        self.max_draft_tokens = config.max_draft_len
         self.hidden_size = hidden_size
         self.max_num_requests = max_num_requests
         self.max_seq_len = max_seq_len
