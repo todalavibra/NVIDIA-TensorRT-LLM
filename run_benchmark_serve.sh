@@ -1,23 +1,25 @@
 set -ex
-export PATH=${HOME}/.local/bin:$PATH # its where trtllm-bench is installed
+export PATH=${HOME}/.local/bin:$PATH # its where trtllm-serve is installed
 export TQDM_MININTERVAL=1000
 export PRINT_ITER_LOG=false
 pip install -e ./
-
 nvidia-smi
 
+# The script must run under PWD as TRT-LLM source code root, because it uses ../tensorrt_llm/serve/scripts/benchmark_serving.py
 output_folder=$1
 [[ ! -e ${output_folder} ]] && mkdir -p ${output_folder}
-
 pushd ${output_folder} # all the dataset and the yaml are stored inside the folder
 
-# Define an array of models to benchmark
+# Sweep configs, change here if you want to run less or more
 declare -a models=(
   "R1-0528-FP4:nvidia/DeepSeek-R1-0528-FP4:/home/scratch.trt_llm_data/llm-models/DeepSeek-R1/DeepSeek-R1-0528-FP4:4:true:2048"
   "70B-FP8:nvidia/Llama-3.1-70B-Instruct-FP8:/home/scratch.trt_llm_data/llm-models/llama-3.1-model/Llama-3.1-70B-Instruct-FP8:4:false:5500"
   "405B-FP8:nvidia/Llama-3.1-405B-Instruct-FP8:/home/scratch.trt_llm_data/llm-models/llama-3.1-model/Llama-3.1-405B-Instruct-FP8:4:false:5500"
   "70B-FP16:meta-llama/Llama-3.1-70B:/home/scratch.trt_llm_data/llm-models/llama-3.1-model/Meta-Llama-3.1-70B:4:false:5500"
 )
+concurrency_levels=(256 128 64 32 16 8 4)
+ISL=1024
+OSL=1024
 
 # Loop through models and run benchmarks
 for model_info in "${models[@]}"; do
@@ -103,7 +105,6 @@ EOF
     exit 1
   }
 
-  concurrency_levels=(256 128 64 32 16 8 4)
   for concurrency in "${concurrency_levels[@]}"
   do
       num_prompts=$((concurrency * 10))
@@ -114,8 +115,8 @@ EOF
           --dataset-name random \
           --random-ids \
           --num-prompts "$num_prompts" \
-          --random-input-len 1024 \
-          --random-output-len 1024 \
+          --random-input-len ${ISL} \
+          --random-output-len ${OSL} \
           --random-range-ratio 0.0 \
           --ignore-eos \
           --percentile-metrics ttft,tpot,itl,e2el \

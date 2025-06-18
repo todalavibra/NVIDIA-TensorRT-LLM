@@ -3,9 +3,9 @@ export PATH=${HOME}/.local/bin:$PATH # its where trtllm-bench is installed
 export TQDM_MININTERVAL=1000
 export PRINT_ITER_LOG=true
 pip install -e ./
-
 nvidia-smi
 
+# The script must run under PWD as TRT-LLM source code root, because it uses ../benchmarks/cpp/prepare_dataset.py
 output_folder=$1
 pushd ${output_folder} # all the dataset and the yaml are stored inside the folder
 
