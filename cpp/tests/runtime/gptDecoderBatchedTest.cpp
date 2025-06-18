@@ -337,15 +337,14 @@ void testDecoder(nvinfer1::DataType const dtype, std::vector<SamplingConfig>& sa
     auto decoder = GptDecoderBatched(streamPtr);
     decoder.setup(decodingMode, batchSize, maxBeamWidth, dataType, modelConfig, worldConfig);
 
-    decoder::DecoderState decoderState(dataType, manager);
+    decoder::DecoderState decoderState;
+    decoderState.setup(batchSize, maxBeamWidth, maxAttentionWindow, sinkTokenLength, maxSeqLength, dataType,
+        modelConfig, worldConfig, manager);
     if (!modelConfig.getSpeculativeDecodingMode().isNone())
     {
-        decoderState.allocateSpeculativeDecodingBuffers(modelConfig.getSpeculativeDecodingMode(), dtype, manager);
+        decoderState.setupSpeculativeDecoding(modelConfig.getSpeculativeDecodingMode(), maxGeneratedTokensPerStep,
+            dtype, modelConfig, worldConfig, manager);
     }
-    decoderState.setup(
-        batchSize, maxBeamWidth, maxAttentionWindow, sinkTokenLength, maxSeqLength, modelConfig, worldConfig, manager);
-    decoderState.setupSpeculativeDecoding(
-        decoderState.getSpeculativeDecodingMode(), maxGeneratedTokensPerStep, modelConfig, worldConfig, manager);
 
     // set up inputs and outputs
     tb::DecoderInputBuffers inputBuffers(batchSize, batchSize, maxGeneratedTokensPerStep, manager);
@@ -477,15 +476,14 @@ void testDecoderWavefront(nvinfer1::DataType const dtype, std::vector<SamplingCo
     auto decoder = GptDecoderBatched(streamPtr);
     decoder.setup(decodingMode, batchSize, maxBeamWidth, dataType, modelConfig, worldConfig);
 
-    decoder::DecoderState decoderState(dataType, manager);
+    decoder::DecoderState decoderState;
+    decoderState.setup(batchSize, maxBeamWidth, maxAttentionWindow, sinkTokenLength, maxSeqLength, dataType,
+        modelConfig, worldConfig, manager);
     if (!modelConfig.getSpeculativeDecodingMode().isNone())
     {
-        decoderState.allocateSpeculativeDecodingBuffers(modelConfig.getSpeculativeDecodingMode(), dtype, manager);
+        decoderState.setupSpeculativeDecoding(modelConfig.getSpeculativeDecodingMode(), maxGeneratedTokensPerStep,
+            dtype, modelConfig, worldConfig, manager);
     }
-    decoderState.setup(
-        batchSize, maxBeamWidth, maxAttentionWindow, sinkTokenLength, maxSeqLength, modelConfig, worldConfig, manager);
-    decoderState.setupSpeculativeDecoding(
-        decoderState.getSpeculativeDecodingMode(), maxGeneratedTokensPerStep, modelConfig, worldConfig, manager);
 
     // set up inputs and outputs
     tb::DecoderInputBuffers inputBuffers(batchSize, batchSize, maxGeneratedTokensPerStep, manager);
@@ -632,15 +630,14 @@ void testDecoderDraft(nvinfer1::DataType const dtype, std::vector<SamplingConfig
     auto decoder = GptDecoderBatched(streamPtr);
     decoder.setup(decodingMode, batchSize, maxBeamWidth, dataType, modelConfig, worldConfig);
 
-    decoder::DecoderState decoderState(dataType, manager);
+    decoder::DecoderState decoderState;
+    decoderState.setup(batchSize, maxBeamWidth, maxAttentionWindow, sinkTokenLength, maxSeqLength, dataType,
+        modelConfig, worldConfig, manager);
     if (!modelConfig.getSpeculativeDecodingMode().isNone())
     {
-        decoderState.allocateSpeculativeDecodingBuffers(modelConfig.getSpeculativeDecodingMode(), dtype, manager);
+        decoderState.setupSpeculativeDecoding(modelConfig.getSpeculativeDecodingMode(), maxGeneratedTokensPerStep,
+            dtype, modelConfig, worldConfig, manager);
     }
-    decoderState.setup(
-        batchSize, maxBeamWidth, maxAttentionWindow, sinkTokenLength, maxSeqLength, modelConfig, worldConfig, manager);
-    decoderState.setupSpeculativeDecoding(
-        decoderState.getSpeculativeDecodingMode(), maxGeneratedTokensPerStep, modelConfig, worldConfig, manager);
 
     // set up inputs and outputs
     tb::DecoderInputBuffers inputBuffers(batchSize, batchSize, maxGeneratedTokensPerStep, manager);
