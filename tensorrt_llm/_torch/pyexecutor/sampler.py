@@ -375,7 +375,6 @@ class TorchSampler(Sampler):
             idx += 1
 
         new_tokens_device = torch.cat(new_tokens_device_array)
-        print("new_tokens_device", new_tokens_device)
         new_tokens_host = new_tokens_device.to('cpu', non_blocking=True)
         sampler_event = torch.cuda.Event()
         sampler_event.record()
@@ -392,7 +391,6 @@ class TorchSampler(Sampler):
                       model_outputs) -> SampleState:
         logits = model_outputs["logits"]
         new_tokens_device = torch.argmax(logits, dim=-1)
-        print("new_tokens_device", new_tokens_device)
         new_tokens_host = new_tokens_device.to('cpu', non_blocking=True)
         sampler_event = torch.cuda.Event()
         sampler_event.record()
@@ -608,7 +606,6 @@ class TRTLLMSampler(Sampler):
 
     def sample_async(self, scheduled_requests: ScheduledRequests,
                      model_outputs) -> SampleStateTRTLLM:
-
         batch_size = scheduled_requests.batch_size
         beam_width = self.beam_width(scheduled_requests.all_requests)
 
