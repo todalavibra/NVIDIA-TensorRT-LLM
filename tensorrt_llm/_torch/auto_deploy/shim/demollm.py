@@ -314,6 +314,7 @@ class DemoGenerationExecutor(GenerationExecutor):
             self.engine_executor.stop()
 
     def __del__(self):
+        self.doing_shutdown = True
         self.shutdown()
 
     def submit(self, request: GenerationRequest) -> GenerationResult:
