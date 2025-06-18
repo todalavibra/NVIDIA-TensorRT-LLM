@@ -6,11 +6,6 @@ import torch
 SF_DTYPE = torch.uint8
 FLOAT4_E2M1X2 = torch.uint8
 
-
-def pad_up(x: int, y: int) -> int:
-    return ((x + y - 1) // y) * y
-
-
 # For GEMM autotuning.
 # Taken from https://github.com/NVIDIA/TensorRT-LLM/blob/main/cpp/include/tensorrt_llm/runtime//modelConfig.h#L38
 # TODO: move to model config, tune for blackwell hardware
