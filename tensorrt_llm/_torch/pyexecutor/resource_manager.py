@@ -598,7 +598,9 @@ class MambaCacheManager(BaseResourceManager):
                 block = self.mamba_cache_free_blocks.pop()
                 self.mamba_cache_index[r] = block
                 state_indices.append(block)
-        self.state_indices = torch.as_tensor(state_indices, dtype=torch.int32)
+        self.state_indices = torch.as_tensor(state_indices,
+                                             dtype=torch.int32,
+                                             device=self.ssm_states.device)
 
     def free_mamba_cache_blocks(self, request_id: int):
         if request_id in self.mamba_cache_index:
@@ -705,40 +707,6 @@ class MambaHybridCacheManager(KVCacheManager, MambaCacheManager):
     def free_resources(self, request: LlmRequest):
         self.free_mamba_resources(request)
         super().free_resources(request)
-
-
-class BaseDraftTokenManager(BaseResourceManager):
-
-    @abstractmethod
-    def get_draft_tokens(self,
-                         input_token_ids: List[List[int]]) -> List[List[int]]:
-        """
-        This method is intended to take a sequence of token ids (prompt + decoded so far)
-        and produce draft tokens for each request. We should have
-        len(get_draft_tokens(tokens)) == len(tokens), but each request's list of draft tokens
-        may be arbitrarily long.
-
-        You can produce the draft tokens in any manner that you want.
-        """
-
-    def prepare_resources(self, scheduled_batch: ScheduledRequests) -> None:
-        input_tokens = []
-        for request in scheduled_batch.generation_requests:
-            input_tokens.append(request.get_tokens(0))
-
-        if not input_tokens:
-            return
-
-        results = self.get_draft_tokens(input_tokens)
-        for request, output in zip(scheduled_batch.generation_requests,
-                                   results):
-            request.py_draft_tokens = output
-
-    def get_max_resource_count(self) -> int:
-        return 0
-
-    def get_needed_resource_to_completion(self, request: LlmRequest) -> int:
-        return 0
 
 
 class SlotManager:
