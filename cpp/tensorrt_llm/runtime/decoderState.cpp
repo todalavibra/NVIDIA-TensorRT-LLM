@@ -170,7 +170,7 @@ void DecoderState::allocateSpeculativeDecodingBuffers(
     TLLM_LOG_TRACE("%s stop", __PRETTY_FUNCTION__);
 }
 
-void DecoderState::setup(SizeType32 maxBatchSize, SizeType32 maxBeamWidth, SizeType32 maxAttentionWindow,
+void DecoderState::setup(SizeType32 maxNumSequences, SizeType32 maxBeamWidth, SizeType32 maxAttentionWindow,
     SizeType32 sinkTokenLength, SizeType32 maxSequenceLength, ModelConfig const& modelConfig,
     WorldConfig const& worldConfig, BufferManager const& bufferManager)
 {
@@ -178,75 +178,75 @@ void DecoderState::setup(SizeType32 maxBatchSize, SizeType32 maxBeamWidth, SizeT
 
     auto const& stream = bufferManager.getStream();
 
-    TLLM_CHECK(maxBatchSize > 0);
+    TLLM_CHECK(maxNumSequences > 0);
     TLLM_CHECK(maxBeamWidth > 0);
     TLLM_CHECK(mMaxDecodingEngineTokens > 0);
     TLLM_CHECK(maxSequenceLength > 0);
-    mMaxBatchSize = maxBatchSize;
+    mMaxNumSequences = maxNumSequences;
     mMaxBeamWidth = maxBeamWidth;
     mMaxSequenceLength = maxSequenceLength;
 
     mNumDecodingEngineTokens.clear();
-    mNumDecodingEngineTokens.resize(mMaxBatchSize, 0);
+    mNumDecodingEngineTokens.resize(mMaxNumSequences, 0);
 
     // setup input
     auto& dInput = *mJointDecodingInput;
     dInput.maxLength = mMaxSequenceLength;
     dInput.maxAttentionWindow = maxAttentionWindow;
     dInput.sinkTokenLength = sinkTokenLength;
-    dInput.stopWordsLists.resize(mMaxBatchSize);
-    dInput.badWordsLists.resize(mMaxBatchSize);
+    dInput.stopWordsLists.resize(mMaxNumSequences);
+    dInput.badWordsLists.resize(mMaxNumSequences);
 
-    auto const maxBatchSizeShape = ITensor::makeShape({mMaxBatchSize});
-    auto const maxBatchSizeXmaxBeamWidthShape = ITensor::makeShape({mMaxBatchSize, mMaxBeamWidth});
+    auto const maxNumSequencesShape = ITensor::makeShape({mMaxNumSequences});
+    auto const maxNumSequencesXmaxBeamWidthShape = ITensor::makeShape({mMaxNumSequences, mMaxBeamWidth});
 
-    const_cast<ITensor&>(*dInput.endIds).reshape(maxBatchSizeShape);
+    const_cast<ITensor&>(*dInput.endIds).reshape(maxNumSequencesShape);
     auto& sequenceLimitLength = const_cast<ITensor&>(*dInput.sequenceLimitLength);
-    sequenceLimitLength.reshape(maxBatchSizeShape);
+    sequenceLimitLength.reshape(maxNumSequencesShape);
     kernels::invokeFill(sequenceLimitLength, mMaxSequenceLength, stream);
     auto& inputLengths = const_cast<ITensor&>(*dInput.lengths);
-    inputLengths.reshape(maxBatchSizeXmaxBeamWidthShape);
+    inputLengths.reshape(maxNumSequencesXmaxBeamWidthShape);
     bufferManager.setZero(inputLengths);
 
     dInput.beamWidths.clear();
-    dInput.beamWidths.resize(mMaxBatchSize, 0);
+    dInput.beamWidths.resize(mMaxNumSequences, 0);
 
-    auto const maxTotalTokensShape = ITensor::makeShape({mMaxBatchSize, mMaxBeamWidth, mMaxSequenceLength});
+    auto const maxTotalTokensShape = ITensor::makeShape({mMaxNumSequences, mMaxBeamWidth, mMaxSequenceLength});
 
     // setup output
     auto& dOutput = *mJointDecodingOutput;
     dOutput.ids->reshape(maxTotalTokensShape);
 
-    auto const maxNewTokensShape = ITensor::makeShape({mMaxDecodingEngineTokens, mMaxBatchSize, mMaxBeamWidth});
+    auto const maxNewTokensShape = ITensor::makeShape({mMaxDecodingEngineTokens, mMaxNumSequences, mMaxBeamWidth});
     mFinishedSteps->reshape(maxNewTokensShape);
     bufferManager.setZero(*mFinishedSteps);
 
-    dOutput.finishReasons->reshape(maxBatchSizeXmaxBeamWidthShape);
+    dOutput.finishReasons->reshape(maxNumSequencesXmaxBeamWidthShape);
     bufferManager.setZero(*dOutput.finishReasons);
 
     dOutput.parentIds->reshape(maxTotalTokensShape);
 
-    dOutput.lengths->reshape(maxBatchSizeXmaxBeamWidthShape);
+    dOutput.lengths->reshape(maxNumSequencesXmaxBeamWidthShape);
     bufferManager.setZero(*dOutput.lengths);
 
-    dOutput.finishedSum->reshape(maxBatchSizeShape);
+    dOutput.finishedSum->reshape(maxNumSequencesShape);
     bufferManager.setZero(*dOutput.finishedSum);
 
     dOutput.newTokensSteps->reshape(maxNewTokensShape);
     bufferManager.setZero(*dOutput.newTokensSteps);
 
-    dOutput.cumLogProbs->reshape(maxBatchSizeXmaxBeamWidthShape);
+    dOutput.cumLogProbs->reshape(maxNumSequencesXmaxBeamWidthShape);
     bufferManager.setZero(*dOutput.cumLogProbs);
 
     dOutput.logProbs->reshape(maxTotalTokensShape);
     bufferManager.setZero(*dOutput.logProbs);
 
-    dOutput.logProbsTiled->reshape(ITensor::makeShape({mMaxSequenceLength, mMaxBatchSize, mMaxBeamWidth}));
+    dOutput.logProbsTiled->reshape(ITensor::makeShape({mMaxSequenceLength, mMaxNumSequences, mMaxBeamWidth}));
     bufferManager.setZero(*dOutput.logProbsTiled);
 
     if (mMaxBeamWidth > 1)
     {
-        dOutput.beamHypotheses.reshape(mMaxBatchSize, mMaxBeamWidth, mMaxSequenceLength);
+        dOutput.beamHypotheses.reshape(mMaxNumSequences, mMaxBeamWidth, mMaxSequenceLength);
         mBeamSearchBuffers->reshape(mMaxBeamWidth, mMaxSequenceLength);
 
         dOutput.gatheredIds->reshape(maxTotalTokensShape);
@@ -259,11 +259,11 @@ void DecoderState::setup(SizeType32 maxBatchSize, SizeType32 maxBeamWidth, SizeT
     auto const vocabSizePadded = modelConfig.getVocabSizePadded(worldConfig.getSize());
 
     const_cast<ITensor&>(*dInput.embeddingBias)
-        .reshape(ITensor::makeShape({mMaxBatchSize, static_cast<SizeType32>(vocabSizePadded)}));
-    const_cast<ITensor&>(*dInput.badWordsPtrs).reshape(maxBatchSizeShape);
-    const_cast<ITensor&>(*dInput.badWordsLens).reshape(maxBatchSizeShape);
-    const_cast<ITensor&>(*dInput.stopWordsPtrs).reshape(maxBatchSizeShape);
-    const_cast<ITensor&>(*dInput.stopWordsLens).reshape(maxBatchSizeShape);
+        .reshape(ITensor::makeShape({mMaxNumSequences, static_cast<SizeType32>(vocabSizePadded)}));
+    const_cast<ITensor&>(*dInput.badWordsPtrs).reshape(maxNumSequencesShape);
+    const_cast<ITensor&>(*dInput.badWordsLens).reshape(maxNumSequencesShape);
+    const_cast<ITensor&>(*dInput.stopWordsPtrs).reshape(maxNumSequencesShape);
+    const_cast<ITensor&>(*dInput.stopWordsLens).reshape(maxNumSequencesShape);
 
     TLLM_LOG_TRACE("%s stop", __PRETTY_FUNCTION__);
 }
@@ -285,7 +285,7 @@ void DecoderState::setupSpeculativeDecoding(SpeculativeDecodingMode const& specu
         "Max tokens per engine step must be equal to 1 when no speculative decoding is configured, "
         "or > 1 for any speculative decoding mode");
 
-    auto const maxNewTokensShape = ITensor::makeShape({mMaxDecodingEngineTokens, mMaxBatchSize, mMaxBeamWidth});
+    auto const maxNewTokensShape = ITensor::makeShape({mMaxDecodingEngineTokens, mMaxNumSequences, mMaxBeamWidth});
     mFinishedSteps->reshape(maxNewTokensShape);
     bufferManager.setZero(*mFinishedSteps);
     dOutput.newTokensSteps->reshape(maxNewTokensShape);
@@ -306,42 +306,42 @@ void DecoderState::setupSpeculativeDecoding(SpeculativeDecodingMode const& specu
         return;
     }
 
-    auto const maxBatchSizeShape = ITensor::makeShape({mMaxBatchSize});
+    auto const maxNumSequencesShape = ITensor::makeShape({mMaxNumSequences});
 
     if (speculativeDecodingMode.isDraftTokensExternal())
     {
         auto const vocabSizePadded = modelConfig.getVocabSizePadded(worldConfig.getSize());
 
         auto const probsShape = ITensor::makeShape(
-            {mMaxBatchSize, mMaxDecodingEngineTokens, mMaxBeamWidth, static_cast<SizeType32>(vocabSizePadded)});
+            {mMaxNumSequences, mMaxDecodingEngineTokens, mMaxBeamWidth, static_cast<SizeType32>(vocabSizePadded)});
         dInput.externalDraftTokensInputs->draftProbs->reshape(probsShape);
         dInput.externalDraftTokensInputs->targetProbs->reshape(probsShape);
         dInput.externalDraftTokensInputs->draftLogits->reshape(
-            ITensor::makeShape({mMaxBatchSize, mMaxDecodingEngineTokens, static_cast<SizeType32>(vocabSizePadded)}));
+            ITensor::makeShape({mMaxNumSequences, mMaxDecodingEngineTokens, static_cast<SizeType32>(vocabSizePadded)}));
         dInput.externalDraftTokensInputs->draftTokenIds->reshape(
-            ITensor::makeShape({mMaxBatchSize, mMaxDecodingEngineTokens}));
-        dInput.externalDraftTokensInputs->numDraftTokens->reshape(maxBatchSizeShape);
-        dInput.externalDraftTokensInputs->numDraftTokensHost->reshape(maxBatchSizeShape);
-        dInput.externalDraftTokensInputs->useDraftLogits->reshape(maxBatchSizeShape);
-        dInput.externalDraftTokensInputs->useDraftLogitsHost->reshape(maxBatchSizeShape);
+            ITensor::makeShape({mMaxNumSequences, mMaxDecodingEngineTokens}));
+        dInput.externalDraftTokensInputs->numDraftTokens->reshape(maxNumSequencesShape);
+        dInput.externalDraftTokensInputs->numDraftTokensHost->reshape(maxNumSequencesShape);
+        dInput.externalDraftTokensInputs->useDraftLogits->reshape(maxNumSequencesShape);
+        dInput.externalDraftTokensInputs->useDraftLogitsHost->reshape(maxNumSequencesShape);
     }
 
     if (speculativeDecodingMode.isMedusa())
     {
         auto const speculativeDecodingModule = modelConfig.getSpeculativeDecodingModulePtr();
         auto& medusaPaths = const_cast<ITensor&>(*dInput.medusaInputs->medusaPaths);
-        medusaPaths.reshape(ITensor::makeShape({mMaxBatchSize, speculativeDecodingModule->getMaxDecodingTokens(),
+        medusaPaths.reshape(ITensor::makeShape({mMaxNumSequences, speculativeDecodingModule->getMaxDecodingTokens(),
             speculativeDecodingModule->getMaxPathLen()}));
         bufferManager.setMem(medusaPaths, -1);
 
         auto& medusaTreeIds = const_cast<ITensor&>(*dInput.medusaInputs->medusaTreeIds);
         medusaTreeIds.reshape(
-            ITensor::makeShape({mMaxBatchSize, speculativeDecodingModule->getMaxDecodingDraftTokens()}));
+            ITensor::makeShape({mMaxNumSequences, speculativeDecodingModule->getMaxDecodingDraftTokens()}));
         bufferManager.setZero(medusaTreeIds);
         auto& curTokensPerStep = const_cast<ITensor&>(*dInput.medusaInputs->medusaCurTokensPerStep);
         auto& targetTokensPerStep = const_cast<ITensor&>(*dInput.medusaInputs->medusaTargetTokensPerStep);
-        curTokensPerStep.reshape(maxBatchSizeShape);
-        targetTokensPerStep.reshape(maxBatchSizeShape);
+        curTokensPerStep.reshape(maxNumSequencesShape);
+        targetTokensPerStep.reshape(maxNumSequencesShape);
         bufferManager.setZero(curTokensPerStep);
         bufferManager.setZero(targetTokensPerStep);
     }
@@ -349,37 +349,37 @@ void DecoderState::setupSpeculativeDecoding(SpeculativeDecodingMode const& specu
     if (speculativeDecodingMode.predictsDraftTokens())
     {
         dOutput.speculativeDecodingOutputs->nextDraftTokens->reshape(
-            ITensor::makeShape({mMaxBatchSize, mMaxDecodingEngineTokens - 1}));
+            ITensor::makeShape({mMaxNumSequences, mMaxDecodingEngineTokens - 1}));
         if (speculativeDecodingMode.variableDraftLength())
         {
-            dOutput.speculativeDecodingOutputs->nextDraftTokensLen->reshape(maxBatchSizeShape);
-            dOutput.speculativeDecodingOutputs->prevDraftTokensLen->reshape(maxBatchSizeShape);
+            dOutput.speculativeDecodingOutputs->nextDraftTokensLen->reshape(maxNumSequencesShape);
+            dOutput.speculativeDecodingOutputs->prevDraftTokensLen->reshape(maxNumSequencesShape);
         }
     }
     if (speculativeDecodingMode.needsKVCacheRewind())
     {
         auto const speculativeDecodingModule = modelConfig.getSpeculativeDecodingModulePtr();
-        dOutput.speculativeDecodingOutputs->acceptedTokensLen->reshape(maxBatchSizeShape);
-        dOutput.speculativeDecodingOutputs->acceptedLengthsCumSum->reshape(ITensor::makeShape({mMaxBatchSize + 1}));
+        dOutput.speculativeDecodingOutputs->acceptedTokensLen->reshape(maxNumSequencesShape);
+        dOutput.speculativeDecodingOutputs->acceptedLengthsCumSum->reshape(ITensor::makeShape({mMaxNumSequences + 1}));
         dOutput.speculativeDecodingOutputs->pathsOffsets->reshape(
-            ITensor::makeShape({mMaxBatchSize * speculativeDecodingModule->getMaxDraftPathLen()}));
+            ITensor::makeShape({mMaxNumSequences * speculativeDecodingModule->getMaxDraftPathLen()}));
     }
 
     if (speculativeDecodingMode.isExplicitDraftTokens())
     {
         mJointDecodingOutput->explicitDraftTokensBuffers = runtime::ExplicitDraftTokensBuffers::Inputs();
         mJointDecodingOutput->explicitDraftTokensBuffers->create(
-            mMaxBatchSize, bufferManager, modelConfig, worldConfig);
+            mMaxNumSequences, bufferManager, modelConfig, worldConfig);
     }
     else if (speculativeDecodingMode.isEagle())
     {
         mJointDecodingOutput->eagleBuffers = runtime::EagleBuffers::Inputs();
-        mJointDecodingOutput->eagleBuffers->create(mMaxBatchSize, bufferManager, modelConfig, worldConfig);
+        mJointDecodingOutput->eagleBuffers->create(mMaxNumSequences, bufferManager, modelConfig, worldConfig);
     }
     else if (speculativeDecodingMode.isLookaheadDecoding())
     {
         mJointDecodingOutput->lookaheadOutputs
-            = runtime::LookaheadDecodingBuffers(mMaxBatchSize, mMaxDecodingEngineTokens, bufferManager);
+            = runtime::LookaheadDecodingBuffers(mMaxNumSequences, mMaxDecodingEngineTokens, bufferManager);
         mJointDecodingInput->lookaheadInputs->tokensPerStep = mJointDecodingOutput->lookaheadOutputs->generationLengths;
     }
 
@@ -396,7 +396,7 @@ void DecoderState::disableLookahead(RequestVector const& genRequests)
     mMaxDecodingDecoderTokens = 1;
     mJointDecodingInput->lookaheadInputs.reset();
 
-    auto const maxNewTokensShape = ITensor::makeShape({mMaxDecodingEngineTokens, mMaxBatchSize, mMaxBeamWidth});
+    auto const maxNewTokensShape = ITensor::makeShape({mMaxDecodingEngineTokens, mMaxNumSequences, mMaxBeamWidth});
     mJointDecodingOutput->newTokensSteps->reshape(maxNewTokensShape);
     mFinishedSteps->reshape(maxNewTokensShape);
 
@@ -511,9 +511,9 @@ TensorPtr DecoderState::getFinishedSteps() const
     return mFinishedSteps;
 }
 
-SizeType32 DecoderState::getMaxBatchSize() const
+SizeType32 DecoderState::getMaxNumSequences() const
 {
-    return mMaxBatchSize;
+    return mMaxNumSequences;
 }
 
 SizeType32 DecoderState::getMaxBeamWidth() const
@@ -563,13 +563,15 @@ std::vector<SizeType32> const& DecoderState::getNumDecodingEngineTokens() const
 
 SizeType32 DecoderState::getNumDecodingEngineTokens(SizeType32 batchIdx) const
 {
-    TLLM_CHECK_WITH_INFO(batchIdx < mMaxBatchSize, "Batch index %d out of bounds (max %d)", batchIdx, mMaxBatchSize);
+    TLLM_CHECK_WITH_INFO(
+        batchIdx < mMaxNumSequences, "Batch index %d out of bounds (max %d)", batchIdx, mMaxNumSequences);
     return mNumDecodingEngineTokens[batchIdx];
 }
 
 void DecoderState::setNumDecodingEngineTokens(SizeType32 batchIdx, SizeType32 numTokens)
 {
-    TLLM_CHECK_WITH_INFO(batchIdx < mMaxBatchSize, "Batch index %d out of bounds (max %d)", batchIdx, mMaxBatchSize);
+    TLLM_CHECK_WITH_INFO(
+        batchIdx < mMaxNumSequences, "Batch index %d out of bounds (max %d)", batchIdx, mMaxNumSequences);
     mNumDecodingEngineTokens[batchIdx] = numTokens;
 }
 
