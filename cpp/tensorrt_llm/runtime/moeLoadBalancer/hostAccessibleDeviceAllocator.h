@@ -48,6 +48,12 @@ public:
     static HostAccessibleDeviceAllocator& getInstance();
 
     /**
+     * @brief check if host accessible device is supported for current GPU.
+     * @return true if supported else false.
+     */
+    static bool isSupported();
+
+    /**
      * @brief Allocate host accessible memory on the device.
      *
      * @param memorySize The size of the memory to allocate.
@@ -69,17 +75,6 @@ public:
      * @return void* The corresponding host-accessible pointer, or nullptr if not found.
      */
     void* getHostPtr(void* devPtr);
-
-    /**
-     * @brief Check if host accessible memory is supported on the current system.
-     * @note This function should be called after IncRefCount() by some MoeLoadBalancer.
-     *
-     * @return bool True if host accessible memory is supported, false otherwise.
-     */
-    bool isSupported() const
-    {
-        return mGpuMemNumaId >= 0 || mGdrHandle != nullptr;
-    }
 
 private:
     struct AllocationInfo

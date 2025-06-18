@@ -1,9 +1,11 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
+import pytest
 import torch
 from mpi4py import MPI
 
+import tensorrt_llm.bindings.internal.runtime as _tbr
 from tensorrt_llm._torch.modules.fused_moe.moe_load_balancer import (
     MoeLoadBalancer, MoeLoadBalancerIterContext, SingleLayerMoeLoadBalancer,
     get_moe_load_balancer, moe_load_balancer_add_single_layer)
@@ -279,6 +281,10 @@ class TestMoeLoadBalancer(unittest.TestCase):
         """Test the real statistic kernel functionality."""
 
         torch.cuda.set_device(0)
+        if not _tbr.is_host_accessible_device_memory_supported():
+            pytest.skip(
+                f"Host accessible device memory is not supported on current platform"
+            )
 
         # Setup parameters
         ep_rank = 0
@@ -340,6 +346,10 @@ class TestMoeLoadBalancer(unittest.TestCase):
         """Test the real routing kernel functionality and verify results."""
 
         torch.cuda.set_device(0)
+        if not _tbr.is_host_accessible_device_memory_supported():
+            pytest.skip(
+                f"Host accessible device memory is not supported on current platform"
+            )
 
         # Setup parameters
         ep_rank = 0

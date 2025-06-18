@@ -27,6 +27,21 @@
 namespace tensorrt_llm::runtime
 {
 
+bool HostAccessibleDeviceAllocator::isSupported()
+{
+    if (TopologyDetector::getInstance().getCurrentGpuMemoryNumaId() >= 0)
+    {
+        // we are on systems that GPU memory is also a NUMA node.
+        return true;
+    }
+    if (!tensorrt_llm::runtime::gdrcopy::isInitialized() && !tensorrt_llm::runtime::gdrcopy::initialize())
+    {
+        // system don't support GDRCopy.
+        return false;
+    }
+    return true;
+}
+
 void HostAccessibleDeviceAllocator::init()
 {
     TLLM_CHECK(mIsInited == false);
