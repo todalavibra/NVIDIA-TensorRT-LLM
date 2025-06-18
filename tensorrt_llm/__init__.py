@@ -29,6 +29,8 @@ _add_trt_llm_dll_directory()
 
 import sys
 
+import xgrammar  # noqa
+
 import tensorrt_llm.functional as functional
 import tensorrt_llm.models as models
 import tensorrt_llm.quantization as quantization

@@ -36,7 +36,12 @@ class GuidedDecoder:
                     xgrammar.VocabType.RAW,
                     vocab_size=vocab_size_padded,
                     stop_token_ids=guided_decoding_config.stop_token_ids)
-            self.xgrammar_compiler = xgrammar.GrammarCompiler(tokenizer_info)
+            self.xgrammar_compiler = xgrammar.GrammarCompiler(
+                tokenizer_info,
+                cache_enabled=True,
+                # TODO (williamj): make 512MB configurable by user.
+                cache_limit_bytes=512 * 1024 * 1024,
+            )
             self.xgrammar_matchers: List[Optional[
                 xgrammar.GrammarMatcher]] = [None] * self.max_num_sequences
             self.bitmask = torch.empty(self.max_num_sequences,
