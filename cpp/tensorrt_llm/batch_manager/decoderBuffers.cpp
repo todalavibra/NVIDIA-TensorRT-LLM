@@ -20,6 +20,7 @@
 #include "tensorrt_llm/common/logger.h"
 #include "tensorrt_llm/runtime/bufferManager.h"
 #include "tensorrt_llm/runtime/common.h"
+#include "tensorrt_llm/runtime/decoderState.h"
 #include "tensorrt_llm/runtime/iBuffer.h"
 #include "tensorrt_llm/runtime/iTensor.h"
 #include "tensorrt_llm/runtime/utils/mpiTags.h"
@@ -50,6 +51,19 @@ DecoderInputBuffers::DecoderInputBuffers(
     }
 
     logits.resize(maxNumSequences);
+}
+
+void DecoderInputBuffers::setupMedusaLogits(SizeType32 maxNumSequences, ModelConfig const& modelConfig)
+{
+    if (modelConfig.getSpeculativeDecodingMode().isMedusa())
+    {
+        auto const maxDraftPathLen = modelConfig.getSpeculativeDecodingModule().getMaxDraftPathLen();
+        predictedDraftLogits.resize(maxNumSequences);
+        for (auto& medusaLogitsHead : predictedDraftLogits)
+        {
+            medusaLogitsHead.resize(maxDraftPathLen);
+        }
+    }
 }
 
 DecoderOutputBuffers::DecoderOutputBuffers(SizeType32 maxNumSequences, SizeType32 maxBeamWidth, SizeType32 maxSeqLen,
@@ -89,25 +103,8 @@ void DecoderOutputBuffers::disableLookaheadDecoding(SizeType32 maxNumSequences)
     TLLM_LOG_TRACE("%s stop", __PRETTY_FUNCTION__);
 }
 
-DecoderBuffers::DecoderBuffers(SizeType32 maxNumSequences, SizeType32 maxBeamWidth, SizeType32 maxAttentionWindow,
-    SizeType32 maxTokensPerStep, BufferManager const& manager, ModelConfig const& modelConfig,
-    WorldConfig const& worldConfig)
-{
-    cacheIndirectionInput = manager.gpu(
-        ITensor::makeShape({maxNumSequences, maxBeamWidth, maxAttentionWindow}), nvinfer1::DataType::kINT32);
-    cacheIndirectionOutput = manager.gpu(
-        ITensor::makeShape({maxNumSequences, maxBeamWidth, maxAttentionWindow}), nvinfer1::DataType::kINT32);
-
-    if (modelConfig.getSpeculativeDecodingMode().needsKVCacheRewind()
-        || modelConfig.getSpeculativeDecodingMode().hasDraftLogits()
-        || modelConfig.getSpeculativeDecodingMode().predictsDraftTokens())
-    {
-        draftBuffers.create(maxNumSequences, maxTokensPerStep, manager, modelConfig);
-    }
-}
-
-void DraftBuffers::create(SizeType32 maxNumSequences, SizeType32 maxTokensPerStep, BufferManager const& manager,
-    ModelConfig const& modelConfig)
+void DecoderOutputBuffers::setupSpeculativeDecoding(
+    SizeType32 maxNumSequences, SizeType32 maxTokensPerStep, ModelConfig const& modelConfig)
 {
     auto const speculativeDecodingMode = modelConfig.getSpeculativeDecodingMode();
 
@@ -125,30 +122,20 @@ void DraftBuffers::create(SizeType32 maxNumSequences, SizeType32 maxTokensPerSte
                 = BufferManager::pinned(ITensor::makeShape({maxNumSequences}), nvinfer1::DataType::kINT32);
         }
     }
+}
 
-    if (speculativeDecodingMode.isMedusa())
-    {
-        auto const maxDraftPathLen = modelConfig.getSpeculativeDecodingModule().getMaxDraftPathLen();
-        predictedDraftLogits.resize(maxNumSequences);
-        for (auto& medusaLogitsHead : predictedDraftLogits)
-        {
-            medusaLogitsHead.resize(maxDraftPathLen);
-        }
-    }
-
-    if (speculativeDecodingMode.needsKVCacheRewind())
-    {
-        auto const maxDraftPathLen = modelConfig.getSpeculativeDecodingModule().getMaxDraftPathLen();
-        acceptedLengthsCumSumDevice
-            = manager.gpu(ITensor::makeShape({maxNumSequences + 1}), nvinfer1::DataType::kINT32);
-        acceptedPackedPathsDevice
-            = manager.gpu(ITensor::makeShape({maxNumSequences, maxDraftPathLen}), nvinfer1::DataType::kINT32);
-    }
+DecoderBuffers::DecoderBuffers(
+    SizeType32 maxNumSequences, SizeType32 maxBeamWidth, SizeType32 maxAttentionWindow, BufferManager const& manager)
+{
+    cacheIndirectionInput = manager.gpu(
+        ITensor::makeShape({maxNumSequences, maxBeamWidth, maxAttentionWindow}), nvinfer1::DataType::kINT32);
+    cacheIndirectionOutput = manager.gpu(
+        ITensor::makeShape({maxNumSequences, maxBeamWidth, maxAttentionWindow}), nvinfer1::DataType::kINT32);
 }
 
 DecoderStepAsyncSend::DecoderStepAsyncSend(DecoderOutputBuffers const& decoderOutputBuffers,
-    DecoderBuffers const& decoderBuffers, bool const returnLogProbs, SizeType32 const maxBeamWidth,
-    bool const useMedusa, mpi::MpiComm const& commSession, int peer)
+    runtime::decoder::DecoderState const& decoderState, DecoderBuffers const& decoderBuffers, bool const returnLogProbs,
+    SizeType32 const maxBeamWidth, bool const useMedusa, mpi::MpiComm const& commSession, int peer)
 {
     TLLM_LOG_TRACE("%s start", __PRETTY_FUNCTION__);
     TLLM_LOG_DEBUG("start send outputs of DecoderBuffers to rank %d", peer);
@@ -168,11 +155,11 @@ DecoderStepAsyncSend::DecoderStepAsyncSend(DecoderOutputBuffers const& decoderOu
     mRequest6 = maxBeamWidth > 1 ? commSession.sendAsync(
                     *decoderBuffers.cacheIndirectionOutput, peer, mpi::MpiTag::kDecoderStepCacheIndirectionOutput)
                                  : nullptr;
-    mRequest7 = useMedusa ? commSession.sendAsync(*decoderBuffers.draftBuffers.acceptedLengthsCumSumDevice, peer,
+    mRequest7 = useMedusa ? commSession.sendAsync(*decoderState.getAcceptedLengthsCumSum(), peer,
                     mpi::MpiTag::kDecoderStepAcceptedLengthsCumSumDevice)
                           : nullptr;
-    mRequest8 = useMedusa ? commSession.sendAsync(*decoderBuffers.draftBuffers.acceptedPackedPathsDevice, peer,
-                    mpi::MpiTag::kDecoderStepAcceptedPackedPathsDevice)
+    mRequest8 = useMedusa ? commSession.sendAsync(
+                    *decoderState.getAcceptedPackedPaths(), peer, mpi::MpiTag::kDecoderStepAcceptedPackedPathsDevice)
                           : nullptr;
     mRequest9 = commSession.sendAsync(
         *decoderOutputBuffers.finishReasonsHost, peer, mpi::MpiTag::kDecoderStepFinishReasonsHost);
@@ -180,9 +167,9 @@ DecoderStepAsyncSend::DecoderStepAsyncSend(DecoderOutputBuffers const& decoderOu
     TLLM_LOG_TRACE("%s stop", __PRETTY_FUNCTION__);
 }
 
-void DecoderStepAsyncSend::recv(DecoderOutputBuffers const& decoderOutputBuffers, DecoderBuffers const& decoderBuffers,
-    bool const returnLogProbs, SizeType32 const maxBeamWidth, bool const useMedusa, mpi::MpiComm const& commSession,
-    int const peer)
+void DecoderStepAsyncSend::recv(DecoderOutputBuffers const& decoderOutputBuffers,
+    runtime::decoder::DecoderState const& decoderState, DecoderBuffers const& decoderBuffers, bool const returnLogProbs,
+    SizeType32 const maxBeamWidth, bool const useMedusa, mpi::MpiComm const& commSession, int const peer)
 {
     TLLM_LOG_TRACE("%s start", __PRETTY_FUNCTION__);
     TLLM_LOG_DEBUG("start recv outputs of DecoderBuffers from rank %d", peer);
@@ -201,10 +188,10 @@ void DecoderStepAsyncSend::recv(DecoderOutputBuffers const& decoderOutputBuffers
     }
     if (useMedusa)
     {
-        commSession.recv(*decoderBuffers.draftBuffers.acceptedLengthsCumSumDevice, peer,
-            mpi::MpiTag::kDecoderStepAcceptedLengthsCumSumDevice);
-        commSession.recv(*decoderBuffers.draftBuffers.acceptedPackedPathsDevice, peer,
-            mpi::MpiTag::kDecoderStepAcceptedPackedPathsDevice);
+        commSession.recv(
+            *decoderState.getAcceptedLengthsCumSum(), peer, mpi::MpiTag::kDecoderStepAcceptedLengthsCumSumDevice);
+        commSession.recv(
+            *decoderState.getAcceptedPackedPaths(), peer, mpi::MpiTag::kDecoderStepAcceptedPackedPathsDevice);
     }
     commSession.recv(*decoderOutputBuffers.finishReasonsHost, peer, mpi::MpiTag::kDecoderStepFinishReasonsHost);
 
@@ -235,9 +222,9 @@ DecoderStepAsyncSend::~DecoderStepAsyncSend()
     TLLM_LOG_TRACE("%s stop", __PRETTY_FUNCTION__);
 }
 
-void DecoderStepAsyncSend::bcast(DecoderOutputBuffers const& decoderOutputBuffers, DecoderBuffers const& decoderBuffers,
-    bool const returnLogProbs, SizeType32 const maxBeamWidth, bool const useMedusa, mpi::MpiComm const& commSession,
-    int const root)
+void DecoderStepAsyncSend::bcast(DecoderOutputBuffers const& decoderOutputBuffers,
+    runtime::decoder::DecoderState const& decoderState, DecoderBuffers const& decoderBuffers, bool const returnLogProbs,
+    SizeType32 const maxBeamWidth, bool const useMedusa, mpi::MpiComm const& commSession, int const root)
 {
     TLLM_LOG_TRACE("%s start", __PRETTY_FUNCTION__);
     TLLM_LOG_DEBUG("start bcast outputs of DecoderBuffers from rank %d", root);
@@ -248,10 +235,8 @@ void DecoderStepAsyncSend::bcast(DecoderOutputBuffers const& decoderOutputBuffer
     auto request4 = returnLogProbs ? commSession.bcastAsync(*decoderOutputBuffers.cumLogProbsHost, root) : nullptr;
     auto request5 = returnLogProbs ? commSession.bcastAsync(*decoderOutputBuffers.logProbsHost, root) : nullptr;
     auto request6 = maxBeamWidth > 1 ? commSession.bcastAsync(*decoderBuffers.cacheIndirectionOutput, root) : nullptr;
-    auto request7
-        = useMedusa ? commSession.bcastAsync(*decoderBuffers.draftBuffers.acceptedLengthsCumSumDevice, root) : nullptr;
-    auto request8
-        = useMedusa ? commSession.bcastAsync(*decoderBuffers.draftBuffers.acceptedPackedPathsDevice, root) : nullptr;
+    auto request7 = useMedusa ? commSession.bcastAsync(*decoderState.getAcceptedLengthsCumSum(), root) : nullptr;
+    auto request8 = useMedusa ? commSession.bcastAsync(*decoderState.getAcceptedPackedPaths(), root) : nullptr;
     auto request9 = commSession.bcastAsync(*decoderOutputBuffers.finishReasonsHost, root);
 
     request1->wait();
