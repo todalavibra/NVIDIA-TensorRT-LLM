@@ -25,7 +25,7 @@ from tensorrt_llm.mapping import Mapping
 
 from .llm_request import LlmRequest, LlmRequestState
 from .scheduler import ScheduledRequests
-
+from .finish_reason import FinishedState
 
 @dataclass(frozen=True, kw_only=True)
 class SampleStateTensors:
@@ -374,6 +374,7 @@ class TorchSampler(Sampler):
             idx += 1
 
         new_tokens_device = torch.cat(new_tokens_device_array)
+        print("new_tokens_device", new_tokens_device)
         new_tokens_host = new_tokens_device.to('cpu', non_blocking=True)
         sampler_event = torch.cuda.Event()
         sampler_event.record()
@@ -390,6 +391,7 @@ class TorchSampler(Sampler):
                       model_outputs) -> SampleState:
         logits = model_outputs["logits"]
         new_tokens_device = torch.argmax(logits, dim=-1)
+        print("new_tokens_device", new_tokens_device)
         new_tokens_host = new_tokens_device.to('cpu', non_blocking=True)
         sampler_event = torch.cuda.Event()
         sampler_event.record()
@@ -605,6 +607,7 @@ class TRTLLMSampler(Sampler):
 
     def sample_async(self, scheduled_requests: ScheduledRequests,
                      model_outputs) -> SampleStateTRTLLM:
+        
         batch_size = scheduled_requests.batch_size
         beam_width = self.beam_width(scheduled_requests.all_requests)
 
@@ -744,9 +747,9 @@ class TRTLLMSampler(Sampler):
                         state.host.cum_log_probs[seq_slot * beam_width +
                                                  beam].item())
 
-                finish_reason = finish_reasons_host[seq_slot * beam_width +
-                                                    beam].item()
-                request.set_finished_reason(FinishReason(finish_reason), beam)
+                finish_reason = FinishedState(finish_reasons_host[seq_slot * beam_width +
+                                                    beam].item()).to_finish_reason()
+                request.set_finished_reason(finish_reason, beam)
 
             if request.py_return_log_probs:
                 request.py_result.append_log_probs([log_probs], cum_log_probs)
