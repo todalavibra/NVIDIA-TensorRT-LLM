@@ -21,6 +21,44 @@ concurrency_levels=(256 128 64 32 16 8 4)
 ISL=1024
 OSL=1024
 
+
+  # Function to wait for server to be ready
+wait_for_server() {
+  target_server_pid=$1
+  local max_attempts=360
+  local attempt=1
+  local server_ready=false
+
+  echo "Waiting for trtllm-serve to be ready..."
+
+  while [ $attempt -le $max_attempts ]; do
+    # Check if the server is still running
+    if ! kill -0 $target_server_pid 2>/dev/null; then
+      echo "Error: Server process has died"
+      return 1
+    fi
+
+    # Try to connect to the server and check HTTP status code 200
+    http_status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/v1/models 2>/dev/null)
+    if [ "$http_status" = "200" ]; then
+      echo "Server is ready! HTTP status: $http_status"
+      server_ready=true
+      break
+    fi
+
+    echo "Attempt $attempt/$max_attempts: Server not ready yet (HTTP status: ${http_status:-N/A}), waiting..."
+    sleep 10
+    ((attempt++))
+  done
+
+  if [ "$server_ready" = false ]; then
+    echo "Error: Server did not become ready after $max_attempts attempts"
+    return 1
+  fi
+
+  return 0
+}
+
 # Loop through models and run benchmarks
 for model_info in "${models[@]}"; do
   IFS=':' read -r model_label model_name model_path GPUS adp max_num_tokens <<< "$model_info"
@@ -62,44 +100,8 @@ EOF
   trtllm-serve ${MODEL} --backend pytorch --tp_size ${GPUS} --ep_size ${GPUS} --max_batch_size 1024 --max_num_tokens ${max_num_tokens} --extra_llm_api_options ./extra-llm-api-config.yml &
   server_pid=$!
 
-  # Function to wait for server to be ready
-  wait_for_server() {
-    local max_attempts=360
-    local attempt=1
-    local server_ready=false
-
-    echo "Waiting for trtllm-serve to be ready..."
-
-    while [ $attempt -le $max_attempts ]; do
-      # Check if the server is still running
-      if ! kill -0 $server_pid 2>/dev/null; then
-        echo "Error: Server process has died"
-        return 1
-      fi
-
-      # Try to connect to the server and check HTTP status code 200
-      http_status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/v1/models 2>/dev/null)
-      if [ "$http_status" = "200" ]; then
-        echo "Server is ready! HTTP status: $http_status"
-        server_ready=true
-        break
-      fi
-
-      echo "Attempt $attempt/$max_attempts: Server not ready yet (HTTP status: ${http_status:-N/A}), waiting..."
-      sleep 10
-      ((attempt++))
-    done
-
-    if [ "$server_ready" = false ]; then
-      echo "Error: Server did not become ready after $max_attempts attempts"
-      return 1
-    fi
-
-    return 0
-  }
-
   # Wait for the server to be ready before proceeding
-  wait_for_server || {
+  wait_for_server $server_pid || {
     echo "Failed to start server, killing process and exiting"
     kill $server_pid 2>/dev/null
     exit 1
