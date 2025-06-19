@@ -25,7 +25,7 @@ build() {
 
 run_benchmark() {
     # bash ~/bin/dev-tekit-d.sh ./run_benchmark_bench.sh ${output_folder}
-    bash ~/bin/dev-tekit-d.sh ./run_benchmark_serve.sh ${output_folder}.serve
+    bash ~/bin/dev-tekit-d.sh ./run_benchmark_serve.sh ${output_folder}
 }
 
 report() {
@@ -34,8 +34,8 @@ report() {
     echo "==========================================="
     echo "Report path" $(realpath ${results})
     echo "START" $start_time "-" "END" ${end_time} $(hostname)
-    grep -Hn "Per GPU Output Throughput" ${results}/*log || true
-    grep -Hn "Output token throughput (tok/s):" ${results}.serve/*log || true
+    grep -Hn "Per GPU Output Throughput" ${results}/bench.*log || true
+    grep -Hn "Output token throughput (tok/s):" ${results}/serve.*log || true
     echo "==========================================="
 }
 

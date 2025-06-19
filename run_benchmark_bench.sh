@@ -81,7 +81,7 @@ EOF
       --warmup 0 \
       --num_requests ${num_requests} \
       --concurrency ${concurrency} \
-      --kv_cache_free_gpu_mem_fraction 0.90 |& tee -a ${model_label}.${concurrency}.log
+      --kv_cache_free_gpu_mem_fraction 0.90 |& tee -a bench.${model_label}.${concurrency}.log
 
   echo "Benchmark completed for $model_label model: $model_name"
   echo ""
