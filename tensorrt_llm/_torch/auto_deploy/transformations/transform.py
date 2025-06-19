@@ -49,9 +49,9 @@ class InferenceOptimizer:
 
         self.ad_config = ad_config
         # Map Pytorch config to AutoDeploy compile backends.
-        if ad_config.use_cuda_graph and ad_config.torch_compile_config:
+        if ad_config.cuda_graph_config is not None and ad_config.torch_compile_config:
             compile_backend = "torch-opt"
-        elif ad_config.use_cuda_graph:
+        elif ad_config.cuda_graph_config is not None:
             compile_backend = "torch-cudagraph"
         elif ad_config.torch_compile_config:
             compile_backend = "torch-compile"
@@ -212,7 +212,9 @@ class InferenceOptimizer:
 
         cm.info.set_generate_only_batch()
         compiler_kwargs = {
-            "cuda_graph_batch_sizes": self.ad_config.cuda_graph_batch_sizes,
+            "cuda_graph_batch_sizes": self.ad_config.cuda_graph_config.batch_sizes
+            if self.ad_config.cuda_graph_config is not None
+            else None,
             "num_batched_inputs": 2,  # TODO (lucaslie): improve once we have a config system...
         }
         egm_compiled = compile_and_capture(

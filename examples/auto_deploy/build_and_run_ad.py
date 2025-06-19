@@ -12,7 +12,7 @@ from tensorrt_llm._torch.auto_deploy.shim import DemoLLM
 from tensorrt_llm._torch.auto_deploy.utils.benchmark import benchmark, store_benchmark_results
 from tensorrt_llm._torch.auto_deploy.utils.logger import ad_logger
 from tensorrt_llm.llmapi.llm import LLM, RequestOutput
-from tensorrt_llm.llmapi.llm_args import TorchCompileConfig
+from tensorrt_llm.llmapi.llm_args import CudaGraphConfig, TorchCompileConfig
 from tensorrt_llm.sampling_params import SamplingParams
 
 # Global torch config, set the torch compile cache to fix up to llama 405B
@@ -56,7 +56,9 @@ def build_llm_from_config(config: SimpleConfig) -> LLM:
         max_seq_len=config.max_seq_len,
         max_batch_size=config.max_batch_size,
         # AutoDeploy-specific parameters
-        use_cuda_graph=config.compile_backend in ["torch-opt", "torch-cudagraph"],
+        cuda_graph_config=CudaGraphConfig(max_batch_size=config.max_batch_size)
+        if config.compile_backend in ["torch-opt", "torch-cudagraph"]
+        else None,
         torch_compile_config=TorchCompileConfig()
         if config.compile_backend in ["torch-opt", "torch-compile"]
         else None,
@@ -65,7 +67,6 @@ def build_llm_from_config(config: SimpleConfig) -> LLM:
         attn_backend=config.attn_backend,
         mla_backend=config.mla_backend,
         skip_loading_weights=config.skip_loading_weights,
-        cuda_graph_max_batch_size=config.max_batch_size,
         free_mem_ratio=config.free_mem_ratio,
         simple_shard_only=config.simple_shard_only,
         attn_page_size=config.attn_page_size,  # Now passed directly as AutoDeploy parameter

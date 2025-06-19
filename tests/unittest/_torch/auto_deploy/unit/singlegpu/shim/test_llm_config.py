@@ -5,7 +5,7 @@ import pytest
 from tensorrt_llm._torch.auto_deploy.shim.demollm import DemoLLM
 from tensorrt_llm._torch.auto_deploy.transformations.transform import InferenceOptimizer
 from tensorrt_llm.llmapi.llm import LLM
-from tensorrt_llm.llmapi.llm_args import TorchCompileConfig, _AutoDeployLlmArgs
+from tensorrt_llm.llmapi.llm_args import CudaGraphConfig, TorchCompileConfig, _AutoDeployLlmArgs
 
 # ================================
 # _AutoDeployLlmArgs Direct Tests
@@ -170,7 +170,7 @@ def test_compile_backend_mapping(
     """Test that compile backend is correctly determined from config."""
     ad_config = _AutoDeployLlmArgs(
         model="test-model",
-        use_cuda_graph=use_cuda_graph,
+        cuda_graph_config=CudaGraphConfig() if use_cuda_graph else None,
         torch_compile_config=torch_compile_config,
     )
     optimizer = InferenceOptimizer(factory=MagicMock(), ad_config=ad_config)

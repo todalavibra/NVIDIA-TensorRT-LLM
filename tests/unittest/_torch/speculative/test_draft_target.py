@@ -7,7 +7,8 @@ import torch
 
 from tensorrt_llm import SamplingParams
 from tensorrt_llm._torch import LLM
-from tensorrt_llm.llmapi import DraftTargetDecodingConfig, KvCacheConfig
+from tensorrt_llm.llmapi import (CudaGraphConfig, DraftTargetDecodingConfig,
+                                 KvCacheConfig)
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.llm_data import llm_models_root
@@ -36,14 +37,15 @@ def test_llama_draft_target(use_cuda_graph: bool, attn_backend: str):
     draft_len = 4
     spec_config = DraftTargetDecodingConfig(
         max_draft_len=draft_len, pytorch_weights_path=draft_model_dir)
-    llm_spec = LLM(model=target_model_dir,
-                   max_batch_size=max_batch_size,
-                   disable_overlap_scheduler=True,
-                   use_cuda_graph=use_cuda_graph,
-                   attn_backend=attn_backend,
-                   cuda_graph_batch_sizes=[1],
-                   kv_cache_config=kv_cache_config,
-                   speculative_config=spec_config)
+    llm_spec = LLM(
+        model=target_model_dir,
+        max_batch_size=max_batch_size,
+        disable_overlap_scheduler=True,
+        cuda_graph_config=CudaGraphConfig() if use_cuda_graph else None,
+        attn_backend=attn_backend,
+        cuda_graph_batch_sizes=[1],
+        kv_cache_config=kv_cache_config,
+        speculative_config=spec_config)
 
     prompts = [
         "The capital of France is", "The president of the United States is"
@@ -52,13 +54,14 @@ def test_llama_draft_target(use_cuda_graph: bool, attn_backend: str):
     generated_text_spec = [result.outputs[0].text for result in results_spec]
     llm_spec.shutdown()
 
-    llm_ref = LLM(model=target_model_dir,
-                  max_batch_size=max_batch_size,
-                  disable_overlap_scheduler=True,
-                  use_cuda_graph=use_cuda_graph,
-                  attn_backend=attn_backend,
-                  cuda_graph_batch_sizes=[1],
-                  kv_cache_config=kv_cache_config)
+    llm_ref = LLM(
+        model=target_model_dir,
+        max_batch_size=max_batch_size,
+        disable_overlap_scheduler=True,
+        cuda_graph_config=CudaGraphConfig() if use_cuda_graph else None,
+        attn_backend=attn_backend,
+        cuda_graph_batch_sizes=[1],
+        kv_cache_config=kv_cache_config)
 
     results_ref = llm_ref.generate(prompts, sampling_params)
     generated_text_ref = [result.outputs[0].text for result in results_ref]

@@ -29,8 +29,9 @@ def get_model_yaml_config(model_label: str,
         """
     base_config = {
         'print_iter_log': True,
-        'use_cuda_graph': True,
-        'cuda_graph_padding_enabled': True,
+        'cuda_graph_config': {
+            'padding_enabled': True,
+        },
     }
     if 'kv_cache_dtype' in model_label:
         base_config.update({
@@ -49,7 +50,9 @@ def get_model_yaml_config(model_label: str,
             ],
             'config': {
                 'enable_attention_dp': True,
-                'use_cuda_graph': True,
+                'cuda_graph_config': {
+                    'padding_enabled': False,
+                },
                 'speculative_config': {
                     'decoding_type': 'MTP',
                     'num_nextn_predict_layers': 3

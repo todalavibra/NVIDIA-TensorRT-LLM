@@ -60,9 +60,9 @@ def _check_ad_config(simple_config: SimpleConfig, ad_config: _AutoDeployLlmArgs)
 
     # compile_backend -> use_cuda_graph
     expected_cuda_graph = simple_config.compile_backend in ["torch-opt", "torch-cudagraph"]
-    assert ad_config.use_cuda_graph == expected_cuda_graph, (
+    assert (ad_config.cuda_graph_config is not None) == expected_cuda_graph, (
         f"Expected use_cuda_graph {expected_cuda_graph} for {simple_config.compile_backend}, "
-        f"got {ad_config.use_cuda_graph}"
+        f"got {ad_config.cuda_graph_config is not None}"
     )
 
     # compile_backend -> torch_compile_config
