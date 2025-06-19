@@ -19,7 +19,7 @@ from tensorrt_llm.quantization import QuantAlgo
 
 from ..attention_backend.interface import AttentionRuntimeFeatures
 from ..distributed import MPIDist
-from ..speculative import NGramConfig, get_spec_resource_manager
+from ..speculative import get_spec_drafter, get_spec_resource_manager
 from ._util import (KvCacheCreator, create_py_executor_instance,
                     instantiate_sampler, is_mla)
 from .config import PyTorchConfig
@@ -30,6 +30,7 @@ from .py_executor import PyExecutor
 
 class _ExecutorCreationStage(enum.Enum):
     SAMPLER = "Sampler"
+    DRAFTER = "Drafter"
     INIT_KV_CACHE = "Initial KV cache (temporary for KV cache size estimation)"
     INIT_EXTRA_RESOURCES = "Additional executor resources (temporary for KV cache size estimation)"
     MODEL_EXTRA = "Model resources created during usage"
@@ -74,6 +75,8 @@ class _ExecutorMemoryMonitor():
         tuning_knobs = {
             _ExecutorCreationStage.SAMPLER:
             "reduce max_seq_len and/or max_attention_window_size",
+            _ExecutorCreationStage.DRAFTER:
+            "reduce max_seq_len and/or max_draft_len",
             _ExecutorCreationStage.KV_CACHE:
             "reduce free_gpu_memory_fraction",
             _ExecutorCreationStage.INIT_KV_CACHE:
@@ -192,15 +195,15 @@ def create_py_executor(
 
     spec_config = executor_config.speculative_config
     has_draft_model_engine = False
+    has_spec_drafter = False
     if spec_config is not None:
         has_draft_model_engine = spec_config.spec_dec_mode.has_draft_model()
-    has_ngram_drafter = isinstance(spec_config, NGramConfig)
+        has_spec_drafter = spec_config.spec_dec_mode.has_spec_drafter()
 
     attn_runtime_features = AttentionRuntimeFeatures(
         chunked_prefill=executor_config.enable_chunked_context,
         cache_reuse=executor_config.kv_cache_config.enable_block_reuse,
-        has_speculative_draft_tokens=has_draft_model_engine
-        or has_ngram_drafter,
+        has_speculative_draft_tokens=has_draft_model_engine or has_spec_drafter,
     )
     logger.info("ATTENTION RUNTIME FEATURES: ", attn_runtime_features)
 
@@ -263,7 +266,6 @@ def create_py_executor(
 
     executor_config.max_seq_len = max_seq_len
     executor_config.max_num_tokens = model_engine.max_num_tokens
-    spec_config = model_engine.spec_config
 
     if executor_config.enable_chunked_context:
         chunk_unit_size = executor_config.tokens_per_block
@@ -324,13 +326,16 @@ def create_py_executor(
                 if estimating_kv_cache else _ExecutorCreationStage.KV_CACHE):
             kv_cache_creator.build_managers(resources)
 
-    # resource managers for speculative decoding
-    if spec_config is not None:
-        spec_resource_manager = get_spec_resource_manager(
-            spec_config, model_engine, draft_model_engine)
-        if spec_resource_manager is not None:
-            resources[ResourceManagerType.
-                      SPEC_RESOURCE_MANAGER] = spec_resource_manager
+    # Resource managers for speculative decoding
+    spec_resource_manager = get_spec_resource_manager(model_engine,
+                                                      draft_model_engine)
+    if spec_resource_manager is not None:
+        resources[
+            ResourceManagerType.SPEC_RESOURCE_MANAGER] = spec_resource_manager
+
+    # Drafter for speculative decoding
+    with mem_monitor.observe_creation_stage(_ExecutorCreationStage.DRAFTER):
+        drafter = get_spec_drafter(model_engine, spec_resource_manager)
 
     with mem_monitor.observe_creation_stage(
             _ExecutorCreationStage.INIT_EXTRA_RESOURCES
@@ -338,7 +343,7 @@ def create_py_executor(
         py_executor = create_py_executor_instance(
             dist, resources, mapping, pytorch_backend_config, executor_config,
             ctx_chunk_config, model_engine, draft_model_engine, False, sampler,
-            lora_config, garbage_collection_gen0_threshold)
+            drafter, lora_config, garbage_collection_gen0_threshold)
 
     if estimating_kv_cache:
         assert kv_cache_creator is not None
@@ -369,7 +374,7 @@ def create_py_executor(
             py_executor = create_py_executor_instance(
                 dist, resources, mapping, pytorch_backend_config,
                 executor_config, ctx_chunk_config, model_engine,
-                draft_model_engine, False, sampler, lora_config,
+                draft_model_engine, False, sampler, drafter, lora_config,
                 garbage_collection_gen0_threshold)
 
     py_executor.start_worker()
